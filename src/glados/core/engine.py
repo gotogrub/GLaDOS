@@ -937,7 +937,7 @@ class Glados:
         else:
             # Lazy-load ASR model on first unmute if it was deferred.
             if self._asr_model is None and hasattr(self, "_asr_engine_type"):
-                logger.info("Loading ASR model (deferred)...")
+                logger.success("Loading ASR model (deferred)...")
                 self._asr_model = get_audio_transcriber(engine_type=self._asr_engine_type)
                 self._asr_model.transcribe_file(resource_path("data/0.wav"))
                 logger.success("ASR model loaded.")
