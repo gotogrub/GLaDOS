@@ -9,11 +9,14 @@
 ## Что добавлено в этом форке
 
 - **Русский TTS** — синтез речи на русском языке голосом GLaDOS через [TeraTTS](https://github.com/Tera2Space/TeraTTS) + [ruaccent](https://github.com/Den4ikAI/ruaccent) для корректной расстановки ударений
+- **Русский ASR** — распознавание речи на русском через [faster-whisper](https://github.com/SYSTRAN/faster-whisper)
 - **Русский конфиг** — готовый `configs/glados_config_ru.yaml` с русским системным промптом и few-shot примерами в стиле GLaDOS
-- **Оптимизированная LLM-модель** — конфиг настроен на Qwen 2.5 7B, которая хорошо работает с русским языком (в отличие от llama3.2)
-- **Ленивая загрузка ASR** — модель распознавания речи загружается только при первом включении, что ускоряет запуск
-- **Улучшенная обработка ошибок** — ASR-ошибки логируются с полным traceback вместо молчаливого падения потока
-- **Проброс параметров LLM** — поле `llm_options` в конфиге для настройки Ollama (`num_ctx`, `num_thread` и др.) под конкретное железо
+- **Умные прерывания** — `interrupt_keywords` в конфиге предотвращает самопрерывание GLaDOS; реагирует только на слова вроде «замолчи», «стоп»
+- **Отключение tools** — `tools_enabled: false` позволяет использовать модели без function calling (например Gemma 3)
+- **Сохранение кадров** — `save_frames: true` сохраняет снимки с камеры и описания VLM на диск
+- **Проброс параметров LLM** — поле `llm_options` в конфиге для настройки Ollama (`num_ctx`, `num_thread` и др.)
+- **Ленивая загрузка ASR** — модель распознавания речи загружается только при первом включении
+- **Логирование в файл** — все логи пишутся в `glados.log` для отладки
 - **Облегчённый конфиг** — `configs/glados_config_ru_lite.yaml` для мини-ПК (qwen2.5:3b, CTC ASR, уменьшенное контекстное окно)
 
 ## Быстрый старт
@@ -22,7 +25,9 @@
 
 ```bash
 # Установить Ollama: https://github.com/ollama/ollama
-ollama pull qwen2.5:7b
+ollama pull gemma3:4b       # быстрая, без поддержки tools
+# или
+ollama pull qwen2.5:7b      # медленнее, поддерживает tools + хороший русский
 ```
 
 ### 2. Клонировать и установить
@@ -67,9 +72,10 @@ uv run glados say "The cake is a lie"
 
 ## Конфигурация
 
-Основные файлы конфигурации:
+Файлы конфигурации:
 - `configs/glados_config.yaml` — английский (оригинал)
-- `configs/glados_config_ru.yaml` — русский
+- `configs/glados_config_ru.yaml` — русский (полный функционал)
+- `configs/glados_config_ru_lite.yaml` — русский (облегчённый, для мини-ПК)
 
 ### Голоса
 
@@ -84,10 +90,13 @@ uv run glados say "The cake is a lie"
 ### Смена LLM
 
 ```yaml
-llm_model: "qwen2.5:7b"      # хороший русский
-# llm_model: "gemma-3:4b"     # быстрее, русский приемлемый
+llm_model: "gemma3:4b"        # быстрая, хороший русский (без tools)
+# llm_model: "qwen2.5:7b"     # хороший русский + поддержка tools
+# llm_model: "qwen2.5:3b"     # облегчённая
 # llm_model: "llama3.2"       # только английский
 ```
+
+Модели без поддержки tools требуют `tools_enabled: false` в конфиге.
 
 Каталог моделей: [ollama.com/library](https://ollama.com/library)
 
@@ -120,7 +129,39 @@ sudo systemctl daemon-reload && sudo systemctl restart ollama
 
 ### ASR (распознавание речи)
 
-Встроенный ASR (Parakeet TDT) поддерживает **только английский**. В русском конфиге он запускается с задержкой — загружается при первом включении через `/asr on` в TUI или Command Palette (`Ctrl+P`).
+Три ASR-движка доступны через `asr_engine`:
+
+| Движок | Язык | Размер | Скорость |
+|--------|------|--------|----------|
+| `whisper` | Мультиязычный (RU, EN, ...) | ~140MB | Средняя |
+| `ctc` | Только английский | ~110MB | Быстрый |
+| `tdt` | Только английский | ~600MB | Лучшая точность |
+
+Русский конфиг использует `whisper` по умолчанию.
+
+### Управление прерываниями
+
+```yaml
+interruptible: true
+# Без keywords: любая речь прерывает GLaDOS (вызывает самопрерывание через динамик)
+# С keywords: только определённые фразы прерывают
+interrupt_keywords: ["замолчи", "заткнись", "стоп", "хватит", "тихо", "shut up", "stop"]
+```
+
+### Компьютерное зрение
+
+```yaml
+vision:
+  camera_index: 0
+  capture_interval_seconds: 5
+  scene_change_threshold: 0.05
+  max_tokens: 64
+  save_frames: true              # сохранять снимки на диск
+  save_frames_dir: "vision_frames"
+  save_frames_max: 1000
+```
+
+При включении GLaDOS видит через камеру и добавляет описание сцены в контекст LLM. С включённой автономией реагирует на изменения сцены автоматически.
 
 ### Кастомная личность
 
@@ -143,7 +184,7 @@ mcp_servers:
 
 Встроенные: `system_info`, `time_info`, `disk_info`, `network_info`, `process_info`, `power_info`, `memory`
 
-Подробнее: [docs/mcp.md](/docs/mcp.md)
+Требуется `tools_enabled: true` (по умолчанию). Подробнее: [docs/mcp.md](/docs/mcp.md)
 
 ## Управление TUI
 
@@ -205,7 +246,8 @@ flowchart TB
 
 | Компонент | Технология | Назначение |
 |-----------|------------|------------|
-| ASR | Parakeet TDT (ONNX) | Распознавание речи (EN) |
+| ASR (EN) | Parakeet TDT/CTC (ONNX) | Распознавание речи (английский) |
+| ASR (RU) | faster-whisper (CTranslate2) | Распознавание речи (мультиязычный) |
 | VAD | Silero VAD (ONNX) | Детекция голоса |
 | TTS (EN) | Kokoro / GLaDOS | Синтез речи (английский) |
 | TTS (RU) | TeraTTS + ruaccent | Синтез речи (русский) |
@@ -224,17 +266,24 @@ uv pip install -e ".[cpu,ru]"
 Устанавливает:
 - **TeraTTS** — VITS-модель для русского TTS (модель `TeraTTS/glados2-g2p-vits` скачивается автоматически с HuggingFace при первом запуске)
 - **ruaccent** — расстановка ударений в русском тексте
+- **faster-whisper** — Whisper ASR с поддержкой русского (модель скачивается при первом запуске)
 
 ## Устранение неполадок
 
 **GLaDOS отвечает сама себе:**
-Используйте наушники или микрофон с эхоподавлением. Или `interruptible: false`.
+Настройте `interrupt_keywords`, чтобы прерывание работало только по ключевым словам. Или используйте наушники / `interruptible: false`.
 
 **Медленный запуск:**
-ASR-модель загружается при старте (~600MB). В русском конфиге загрузка отложена до первого `/asr on`.
+ASR-модель загружается при старте. Используйте `asr_muted: true` для отложенной загрузки.
+
+**Модель не поддерживает tools:**
+Установите `tools_enabled: false` для моделей вроде Gemma 3.
 
 **TTS не работает (русский):**
 Убедитесь что установлены зависимости: `uv pip install -e ".[cpu,ru]"`
+
+**Логи:**
+Все логи пишутся в `glados.log` в корне проекта.
 
 **Windows DLL error:**
 Установите [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
@@ -244,6 +293,7 @@ ASR-модель загружается при старте (~600MB). В рус�
 - [dnhkng/GLaDOS](https://github.com/dnhkng/GLaDOS) — оригинальный проект
 - [TeraTTS](https://github.com/Tera2Space/TeraTTS) — русский TTS
 - [ruaccent](https://github.com/Den4ikAI/ruaccent) — акцентуация русского текста
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — мультиязычный ASR
 - [KPEKEP/GLaDOS](https://github.com/KPEKEP/GLaDOS) — вдохновение для русской интеграции
 - [Ollama](https://ollama.ai/) — локальный запуск LLM
 

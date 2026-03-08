@@ -39,3 +39,16 @@ class VisionConfig(BaseModel):
         le=512,
         description="Maximum tokens to generate in the background vision description.",
     )
+    save_frames: bool = Field(
+        default=False,
+        description="Save captured frames to disk when scene changes.",
+    )
+    save_frames_dir: Path = Field(
+        default=Path("vision_frames"),
+        description="Directory to save captured frames.",
+    )
+    save_frames_max: int = Field(
+        default=1000,
+        gt=0,
+        description="Maximum number of saved frames. Oldest are deleted when exceeded.",
+    )

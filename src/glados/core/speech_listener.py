@@ -53,6 +53,7 @@ class SpeechListener:
         wake_word: str | None,
         pause_time: float,
         interruptible: bool = True,
+        interrupt_keywords: list[str] | None = None,
         interaction_state: "InteractionState | None" = None,
         observability_bus: ObservabilityBus | None = None,
         asr_muted_event: threading.Event | None = None,
@@ -78,6 +79,7 @@ class SpeechListener:
         self.wake_word = wake_word.lower() if wake_word else None
         self.pause_time = pause_time
         self.interruptible = interruptible
+        self._interrupt_keywords = [kw.lower() for kw in interrupt_keywords] if interrupt_keywords else None
 
         # Circular buffer to hold pre-activation samples
         self._buffer: deque[NDArray[np.float32]] = deque(maxlen=self.BUFFER_SIZE // self.VAD_SIZE)
@@ -96,6 +98,7 @@ class SpeechListener:
         self._asr_muted_event = asr_muted_event
         self._audio_state = audio_state
         self._on_interrupt = on_interrupt
+        self._pending_interrupt = False
 
     def run(self) -> None:
         """
@@ -192,10 +195,18 @@ class SpeechListener:
             # Check if this is an interrupt (user speaking while GLaDOS was speaking)
             was_speaking = self.currently_speaking_event.is_set()
 
+            # If interrupt_keywords mode: don't interrupt immediately, just record
+            if was_speaking and self._interrupt_keywords:
+                self._samples = list(self._buffer)
+                self._recording_started = True
+                self._pending_interrupt = True
+                return
+
             self.audio_io.stop_speaking()
             self.processing_active_event.clear()
             self._samples = list(self._buffer)  # Clean conversion
             self._recording_started = True
+            self._pending_interrupt = False
 
             if was_speaking and self._on_interrupt:
                 self._on_interrupt("user_interrupt")
@@ -262,6 +273,7 @@ class SpeechListener:
         self._samples.clear()
         self._gap_counter = 0
         self._buffer.clear()
+        self._pending_interrupt = False
         if self._audio_state is not None:
             self._audio_state.reset()
 
@@ -283,6 +295,21 @@ class SpeechListener:
 
         if detected_text:
             logger.success(f"ASR text: '{detected_text}'")
+
+            # If this was a pending interrupt, check for keywords before interrupting
+            if self._pending_interrupt:
+                text_lower = detected_text.lower()
+                keyword_match = any(kw in text_lower for kw in self._interrupt_keywords)
+                if not keyword_match:
+                    logger.debug(f"Ignoring speech during playback (no interrupt keyword): '{detected_text}'")
+                    self.reset()
+                    return
+                # Keyword matched — interrupt now
+                logger.success(f"Interrupt keyword detected in: '{detected_text}'")
+                self.audio_io.stop_speaking()
+                self.processing_active_event.clear()
+                if self._on_interrupt:
+                    self._on_interrupt("user_interrupt")
 
             if self.wake_word and not self._wakeword_detected(detected_text):
                 logger.info(f"Required wake word {self.wake_word=} not detected.")

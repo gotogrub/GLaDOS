@@ -106,6 +106,7 @@ class GladosConfig(BaseModel):
     completion_url: HttpUrl
     api_key: str | None
     interruptible: bool
+    interrupt_keywords: list[str] | None = None
     audio_io: str
     input_mode: Literal["audio", "text", "both"] = "audio"
     tts_enabled: bool = True
@@ -116,6 +117,7 @@ class GladosConfig(BaseModel):
     announcement: str | None
     llm_headers: dict[str, str] | None = None
     llm_options: dict[str, Any] | None = None
+    tools_enabled: bool = True
     tui_theme: str | None = None
     personality_preprompt: list[PersonalityPrompt]
     slow_clap_audio_path: str = "data/slow-clap.mp3"
@@ -191,6 +193,7 @@ class Glados:
         llm_model: str,
         api_key: str | None = None,
         interruptible: bool = True,
+        interrupt_keywords: list[str] | None = None,
         wake_word: str | None = None,
         announcement: str | None = None,
         personality_preprompt: tuple[dict[str, str], ...] = DEFAULT_PERSONALITY_PREPROMPT,
@@ -204,6 +207,7 @@ class Glados:
         asr_muted: bool = False,
         llm_headers: dict[str, str] | None = None,
         llm_options: dict[str, Any] | None = None,
+        tools_enabled: bool = True,
     ) -> None:
         """
         Initialize the Glados voice assistant with configuration parameters.
@@ -240,11 +244,13 @@ class Glados:
         self.llm_model = llm_model
         self.api_key = api_key
         self.interruptible = interruptible
+        self.interrupt_keywords = interrupt_keywords
         self.wake_word = wake_word
         self.announcement = announcement
         self.tool_config = tool_config or {}
         self.tool_timeout = tool_timeout
         self.llm_options = llm_options or {}
+        self.tools_enabled = tools_enabled
         self.mcp_servers = mcp_servers or []
         self._conversation_store = ConversationStore(initial_messages=list(personality_preprompt))
         self.vision_config = vision_config
@@ -373,6 +379,7 @@ class Glados:
                 asr_model=self._asr_model,
                 wake_word=self.wake_word,
                 interruptible=self.interruptible,
+                interrupt_keywords=self.interrupt_keywords,
                 shutdown_event=self.shutdown_event,
                 currently_speaking_event=self.currently_speaking_event,
                 processing_active_event=self.processing_active_event,
@@ -417,6 +424,7 @@ class Glados:
             observability_bus=self.observability_bus,
             extra_headers=llm_headers,
             llm_options=self.llm_options,
+            tools_enabled=self.tools_enabled,
             lane="priority",
         )
         self.autonomy_llm_processors: list[LanguageModelProcessor] = []
@@ -446,6 +454,7 @@ class Glados:
                     observability_bus=self.observability_bus,
                     extra_headers=llm_headers,
                     llm_options=self.llm_options,
+                    tools_enabled=self.tools_enabled,
                     lane="autonomy",
                     inflight_counter=self._autonomy_inflight,
                 )
@@ -825,6 +834,7 @@ class Glados:
             llm_model=config.llm_model,
             api_key=config.api_key,
             interruptible=config.interruptible,
+            interrupt_keywords=config.interrupt_keywords,
             wake_word=config.wake_word,
             announcement=config.announcement,
             personality_preprompt=tuple(config.to_chat_messages()),
@@ -838,6 +848,7 @@ class Glados:
             asr_muted=config.asr_muted,
             llm_headers=config.llm_headers,
             llm_options=config.llm_options,
+            tools_enabled=config.tools_enabled,
         )
         # Store engine type so ASR can be loaded lazily on first unmute.
         instance._asr_engine_type = config.asr_engine
@@ -961,6 +972,7 @@ class Glados:
                     asr_model=self._asr_model,
                     wake_word=self.wake_word,
                     interruptible=self.interruptible,
+                    interrupt_keywords=self.interrupt_keywords,
                     shutdown_event=self.shutdown_event,
                     currently_speaking_event=self.currently_speaking_event,
                     processing_active_event=self.processing_active_event,

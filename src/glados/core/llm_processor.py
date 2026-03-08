@@ -66,6 +66,7 @@ class LanguageModelProcessor:
         observability_bus: ObservabilityBus | None = None,
         extra_headers: dict[str, str] | None = None,
         llm_options: dict[str, Any] | None = None,
+        tools_enabled: bool = True,
         lane: str = "priority",
         inflight_counter: InFlightCounter | None = None,
     ) -> None:
@@ -90,6 +91,7 @@ class LanguageModelProcessor:
         self._lane = lane
         self._inflight_counter = inflight_counter
         self._llm_options = llm_options or {}
+        self._tools_enabled = tools_enabled
         self._ollama_mode = self._is_ollama_endpoint()
 
         self.prompt_headers = {"Content-Type": "application/json"}
@@ -684,7 +686,7 @@ class LanguageModelProcessor:
                     inflight_guard = False
                 self._conversation_store.append(llm_message)
 
-                allow_tools = bool(llm_input.get("_allow_tools", True))
+                allow_tools = self._tools_enabled and bool(llm_input.get("_allow_tools", True))
                 tools = self._build_tools(autonomy_mode) if allow_tools else []
                 if tools and not autonomy_mode and llm_message.get("role") == "user":
                     content = str(llm_message.get("content", ""))
@@ -733,7 +735,7 @@ class LanguageModelProcessor:
                                 headers=self.prompt_headers,
                                 json=data,
                                 stream=True,
-                                timeout=30,  # Add a timeout for the request itself
+                                timeout=120,
                             ) as response:
                                 if response.status_code >= 400:
                                     response_text = response.text.strip()

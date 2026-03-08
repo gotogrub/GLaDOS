@@ -5,6 +5,8 @@ from __future__ import annotations
 import queue
 import threading
 import time
+from datetime import datetime
+from pathlib import Path
 
 import cv2
 from loguru import logger
@@ -64,6 +66,12 @@ class VisionProcessor:
         self._prompt_cache: dict[tuple[str, int], str] = {}
         self._last_description: str | None = None
 
+        # Frame saving
+        if config.save_frames:
+            self._frames_dir = Path(config.save_frames_dir)
+            self._frames_dir.mkdir(parents=True, exist_ok=True)
+            logger.success("VisionProcessor: Saving frames to {}", self._frames_dir)
+
     def run(self) -> None:
         """Main processing loop for the vision processor thread."""
         logger.info("VisionProcessor thread started.")
@@ -106,6 +114,7 @@ class VisionProcessor:
                     self.vision_state.update(description)
                     logger.success("Vision snapshot updated: {}", description)
                     self._publish_update(description, change_score)
+                    self._save_frame(frame, description)
                     self._last_description = description
 
                 self._sleep(loop_started)
@@ -278,6 +287,28 @@ class VisionProcessor:
 
         request.response_queue.put(description)
         return True
+
+    def _save_frame(self, frame: NDArray[np.uint8], description: str | None = None) -> None:
+        """Save a frame to disk with timestamp filename."""
+        if not self.config.save_frames:
+            return
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            filepath = self._frames_dir / f"{timestamp}.jpg"
+            cv2.imwrite(str(filepath), frame)
+
+            if description:
+                meta_path = filepath.with_suffix(".txt")
+                meta_path.write_text(description, encoding="utf-8")
+
+            # Enforce max frames limit
+            saved = sorted(self._frames_dir.glob("*.jpg"))
+            if len(saved) > self.config.save_frames_max:
+                for old in saved[: len(saved) - self.config.save_frames_max]:
+                    old.unlink(missing_ok=True)
+                    old.with_suffix(".txt").unlink(missing_ok=True)
+        except Exception as e:
+            logger.warning("VisionProcessor: Failed to save frame: {}", e)
 
     def _sleep(self, loop_started: float) -> None:
         """Sleep until next capture interval.

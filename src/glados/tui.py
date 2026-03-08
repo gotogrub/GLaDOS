@@ -1037,6 +1037,15 @@ class GladosUI(App[None]):
         fmt = "{time:YYYY-MM-DD HH:mm:ss.SSS} | {message}"
         logger.add(print, format=fmt, level="SUCCESS")
 
+        # Log to file for debugging
+        logger.add(
+            "glados.log",
+            rotation="10 MB",
+            retention="3 days",
+            level="DEBUG",
+            format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level:<8} | {name}:{function}:{line} | {message}",
+        )
+
     def on_mount(self) -> None:
         """
         Mount the application and display the initial splash screen.
