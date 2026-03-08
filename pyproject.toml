@@ -42,6 +42,7 @@ export = [
     "onnxconverter-common>=1.16.0",
 ]
 api = ["litestar[standard,structlog]>=2.15.1"]
+ru = ["TeraTTS>=1.0", "ruaccent>=1.5.0"]
 
 [project.scripts]
 glados = "glados.cli:main"
