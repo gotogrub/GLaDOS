@@ -115,6 +115,7 @@ class GladosConfig(BaseModel):
     voice: str
     announcement: str | None
     llm_headers: dict[str, str] | None = None
+    llm_options: dict[str, Any] | None = None
     tui_theme: str | None = None
     personality_preprompt: list[PersonalityPrompt]
     slow_clap_audio_path: str = "data/slow-clap.mp3"
@@ -202,6 +203,7 @@ class Glados:
         tts_enabled: bool = True,
         asr_muted: bool = False,
         llm_headers: dict[str, str] | None = None,
+        llm_options: dict[str, Any] | None = None,
     ) -> None:
         """
         Initialize the Glados voice assistant with configuration parameters.
@@ -242,6 +244,7 @@ class Glados:
         self.announcement = announcement
         self.tool_config = tool_config or {}
         self.tool_timeout = tool_timeout
+        self.llm_options = llm_options or {}
         self.mcp_servers = mcp_servers or []
         self._conversation_store = ConversationStore(initial_messages=list(personality_preprompt))
         self.vision_config = vision_config
@@ -413,6 +416,7 @@ class Glados:
             mcp_manager=self.mcp_manager,
             observability_bus=self.observability_bus,
             extra_headers=llm_headers,
+            llm_options=self.llm_options,
             lane="priority",
         )
         self.autonomy_llm_processors: list[LanguageModelProcessor] = []
@@ -441,6 +445,7 @@ class Glados:
                     mcp_manager=self.mcp_manager,
                     observability_bus=self.observability_bus,
                     extra_headers=llm_headers,
+                    llm_options=self.llm_options,
                     lane="autonomy",
                     inflight_counter=self._autonomy_inflight,
                 )
@@ -832,6 +837,7 @@ class Glados:
             tts_enabled=config.tts_enabled,
             asr_muted=config.asr_muted,
             llm_headers=config.llm_headers,
+            llm_options=config.llm_options,
         )
         # Store engine type so ASR can be loaded lazily on first unmute.
         instance._asr_engine_type = config.asr_engine

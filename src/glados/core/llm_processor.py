@@ -65,6 +65,7 @@ class LanguageModelProcessor:
         mcp_manager: MCPManager | None = None,
         observability_bus: ObservabilityBus | None = None,
         extra_headers: dict[str, str] | None = None,
+        llm_options: dict[str, Any] | None = None,
         lane: str = "priority",
         inflight_counter: InFlightCounter | None = None,
     ) -> None:
@@ -88,6 +89,7 @@ class LanguageModelProcessor:
         self._observability_bus = observability_bus
         self._lane = lane
         self._inflight_counter = inflight_counter
+        self._llm_options = llm_options or {}
         self._ollama_mode = self._is_ollama_endpoint()
 
         self.prompt_headers = {"Content-Type": "application/json"}
@@ -693,11 +695,15 @@ class LanguageModelProcessor:
                     if tool.get("function", {}).get("name")
                 }
                 base_messages = self._build_messages(autonomy_mode)
-                data = {
+                data: dict[str, Any] = {
                     "model": self.model_name,
                     "stream": True,
-                    # Add other parameters like temperature, max_tokens if needed from config
                 }
+                if self._llm_options:
+                    if self._ollama_mode:
+                        data["options"] = self._llm_options
+                    else:
+                        data.update(self._llm_options)
                 if allow_tools and tools:
                     data["tools"] = tools
 

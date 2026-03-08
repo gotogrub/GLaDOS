@@ -13,6 +13,8 @@
 - **Оптимизированная LLM-модель** — конфиг настроен на Qwen 2.5 7B, которая хорошо работает с русским языком (в отличие от llama3.2)
 - **Ленивая загрузка ASR** — модель распознавания речи загружается только при первом включении, что ускоряет запуск
 - **Улучшенная обработка ошибок** — ASR-ошибки логируются с полным traceback вместо молчаливого падения потока
+- **Проброс параметров LLM** — поле `llm_options` в конфиге для настройки Ollama (`num_ctx`, `num_thread` и др.) под конкретное железо
+- **Облегчённый конфиг** — `configs/glados_config_ru_lite.yaml` для мини-ПК (qwen2.5:3b, CTC ASR, уменьшенное контекстное окно)
 
 ## Быстрый старт
 
@@ -88,6 +90,33 @@ llm_model: "qwen2.5:7b"      # хороший русский
 ```
 
 Каталог моделей: [ollama.com/library](https://ollama.com/library)
+
+### Оптимизация производительности LLM
+
+Параметры Ollama можно задать прямо в конфиге:
+
+```yaml
+llm_options:
+  num_ctx: 2048      # контекстное окно (меньше = быстрее)
+  num_thread: 8      # потоки CPU (половина от общего числа — хороший вариант)
+```
+
+Для оптимальной работы Ollama на CPU настройте systemd-сервис:
+
+```bash
+sudo systemctl edit ollama.service
+```
+
+```ini
+[Service]
+Environment="OLLAMA_NUM_PARALLEL=1"
+Environment="OLLAMA_MAX_LOADED_MODELS=1"
+Environment="OLLAMA_FLASH_ATTENTION=1"
+```
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+```
 
 ### ASR (распознавание речи)
 

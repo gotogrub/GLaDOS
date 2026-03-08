@@ -13,6 +13,8 @@ A fork of [dnhkng/GLaDOS](https://github.com/dnhkng/GLaDOS) with **Russian langu
 - **Optimized LLM** — configured for Qwen 2.5 7B which handles Russian well (unlike llama3.2)
 - **Lazy ASR loading** — speech recognition model loads only on first unmute, speeding up startup
 - **Better error handling** — ASR errors are logged with full traceback instead of silently killing the thread
+- **LLM options passthrough** — `llm_options` config field to tune Ollama parameters (`num_ctx`, `num_thread`, etc.) per config
+- **Lite config** — `configs/glados_config_ru_lite.yaml` optimized for mini-PCs (qwen2.5:3b, CTC ASR, reduced context window)
 
 ## Quick Start
 
@@ -88,6 +90,33 @@ llm_model: "qwen2.5:7b"      # good Russian support
 ```
 
 Browse models: [ollama.com/library](https://ollama.com/library)
+
+### LLM Performance Tuning
+
+Pass Ollama options directly via config:
+
+```yaml
+llm_options:
+  num_ctx: 2048      # context window (lower = faster)
+  num_thread: 8      # CPU threads (half of total is a good default)
+```
+
+For optimal Ollama performance on CPU, configure the systemd service:
+
+```bash
+sudo systemctl edit ollama.service
+```
+
+```ini
+[Service]
+Environment="OLLAMA_NUM_PARALLEL=1"
+Environment="OLLAMA_MAX_LOADED_MODELS=1"
+Environment="OLLAMA_FLASH_ATTENTION=1"
+```
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart ollama
+```
 
 ### ASR (Speech Recognition)
 

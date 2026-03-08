@@ -9,6 +9,9 @@ Glados:
   asr_muted: true  # ASR (Parakeet) — английский; /asr on для включения
   tui_theme: "aperture"
   asr_engine: "ctc"  # легче чем tdt (~110MB vs ~600MB), быстрее на CPU
+  llm_options:
+    num_ctx: 2048
+    num_thread: 8
   llm_headers: null
   wake_word: null
   voice: "glados_ru"

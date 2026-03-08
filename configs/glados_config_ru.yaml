@@ -9,6 +9,9 @@ Glados:
   asr_muted: false
   tui_theme: "aperture"
   asr_engine: "tdt"
+  llm_options:
+    num_ctx: 4096
+    num_thread: 8
   llm_headers: null
   wake_word: null
   voice: "glados_ru"
