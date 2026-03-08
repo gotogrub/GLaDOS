@@ -1,27 +1,29 @@
 # GLaDOS Personality Core
 
-> *"Наука — это не вопрос «почему». Это вопрос «а почему бы и нет»."  -  Кейв Джонсон*
+> *"Science isn't about asking why. It's about asking, 'Why not?'"  -  Cave Johnson*
 
-Форк [dnhkng/GLaDOS](https://github.com/dnhkng/GLaDOS) с поддержкой **русского языка** — голосовой ИИ-ассистент в стиле GLaDOS из Portal. Саркастичный, пассивно-агрессивный искусственный интеллект, который видит через камеру, слышит через микрофон, говорит через динамик и осуждает вас соответственно.
+[Русская версия / Russian version](README.ru.md)
 
-## Что добавлено в этом форке
+A fork of [dnhkng/GLaDOS](https://github.com/dnhkng/GLaDOS) with **Russian language support** — a voice AI assistant styled after GLaDOS from Portal. A sarcastic, passive-aggressive artificial intelligence that sees through a camera, hears through a microphone, speaks through a speaker, and judges you accordingly.
 
-- **Русский TTS** — синтез речи на русском языке голосом GLaDOS через [TeraTTS](https://github.com/Tera2Space/TeraTTS) + [ruaccent](https://github.com/Den4ikAI/ruaccent) для корректной расстановки ударений
-- **Русский конфиг** — готовый `configs/glados_config_ru.yaml` с русским системным промптом и few-shot примерами в стиле GLaDOS
-- **Оптимизированная LLM-модель** — конфиг настроен на Qwen 2.5 7B, которая хорошо работает с русским языком (в отличие от llama3.2)
-- **Ленивая загрузка ASR** — модель распознавания речи загружается только при первом включении, что ускоряет запуск
-- **Улучшенная обработка ошибок** — ASR-ошибки логируются с полным traceback вместо молчаливого падения потока
+## What's added in this fork
 
-## Быстрый старт
+- **Russian TTS** — Russian speech synthesis with GLaDOS voice via [TeraTTS](https://github.com/Tera2Space/TeraTTS) + [ruaccent](https://github.com/Den4ikAI/ruaccent) for proper stress placement
+- **Russian config** — ready-to-use `configs/glados_config_ru.yaml` with Russian system prompt and few-shot examples in GLaDOS style
+- **Optimized LLM** — configured for Qwen 2.5 7B which handles Russian well (unlike llama3.2)
+- **Lazy ASR loading** — speech recognition model loads only on first unmute, speeding up startup
+- **Better error handling** — ASR errors are logged with full traceback instead of silently killing the thread
 
-### 1. Установить Ollama и скачать модель
+## Quick Start
+
+### 1. Install Ollama and pull a model
 
 ```bash
-# Установить Ollama: https://github.com/ollama/ollama
+# Install Ollama: https://github.com/ollama/ollama
 ollama pull qwen2.5:7b
 ```
 
-### 2. Клонировать и установить
+### 2. Clone and install
 
 ```bash
 git clone https://github.com/gotogrub/GLaDOS.git
@@ -30,77 +32,77 @@ python scripts/install.py
 uv pip install -e ".[cpu,ru]"
 ```
 
-### 3. Скачать модели
+### 3. Download models
 
 ```bash
 uv run glados download
 ```
 
-### 4. Запустить
+### 4. Run
 
 ```bash
 uv run glados tui --config configs/glados_config_ru.yaml
 ```
 
-## Режимы запуска
+## Run modes
 
 ```bash
-# Русская версия (TUI)
+# Russian version (TUI)
 uv run glados tui --config configs/glados_config_ru.yaml
 
-# Английская версия (оригинал)
+# English version (original)
 uv run glados tui
 
-# Голосовой режим (английский ASR)
+# Voice mode (English ASR)
 uv run glados start
 
-# Только текст
+# Text only
 uv run glados start --input-mode text --config configs/glados_config_ru.yaml
 
-# Озвучить фразу
+# Speak a phrase
 uv run glados say "The cake is a lie"
 ```
 
-## Конфигурация
+## Configuration
 
-Основные файлы конфигурации:
-- `configs/glados_config.yaml` — английский (оригинал)
-- `configs/glados_config_ru.yaml` — русский
+Config files:
+- `configs/glados_config.yaml` — English (original)
+- `configs/glados_config_ru.yaml` — Russian
 
-### Голоса
+### Voices
 
-В `voice` можно указать:
+Set `voice` in config:
 
-| Значение | Язык | Описание |
-|----------|------|----------|
-| `glados` | EN | Оригинальный голос GLaDOS |
-| `glados_ru` | RU | Русский голос GLaDOS (TeraTTS) |
-| `af_bella`, `am_adam`, ... | EN | Голоса Kokoro |
+| Value | Language | Description |
+|-------|----------|-------------|
+| `glados` | EN | Original GLaDOS voice |
+| `glados_ru` | RU | Russian GLaDOS voice (TeraTTS) |
+| `af_bella`, `am_adam`, ... | EN | Kokoro voices |
 
-### Смена LLM
+### Changing the LLM
 
 ```yaml
-llm_model: "qwen2.5:7b"      # хороший русский
-# llm_model: "gemma-3:4b"     # быстрее, русский приемлемый
-# llm_model: "llama3.2"       # только английский
+llm_model: "qwen2.5:7b"      # good Russian support
+# llm_model: "gemma-3:4b"     # faster, decent Russian
+# llm_model: "llama3.2"       # English only
 ```
 
-Каталог моделей: [ollama.com/library](https://ollama.com/library)
+Browse models: [ollama.com/library](https://ollama.com/library)
 
-### ASR (распознавание речи)
+### ASR (Speech Recognition)
 
-Встроенный ASR (Parakeet TDT) поддерживает **только английский**. В русском конфиге он запускается с задержкой — загружается при первом включении через `/asr on` в TUI или Command Palette (`Ctrl+P`).
+Built-in ASR (Parakeet TDT) supports **English only**. In the Russian config it starts deferred — loads on first enable via `/asr on` in TUI or Command Palette (`Ctrl+P`).
 
-### Кастомная личность
+### Custom Personality
 
 ```yaml
 personality_preprompt:
-  - system: "Ты — саркастичный ИИ, который осуждает людей."
-  - user: "Что думаешь о моём коде?"
-  - assistant: "Я видела лучший вывод от генератора случайных чисел."
+  - system: "You are a sarcastic AI who judges humans."
+  - user: "What do you think of my code?"
+  - assistant: "I've seen better output from a random number generator."
 ```
 
-### MCP-серверы
+### MCP Servers
 
 ```yaml
 mcp_servers:
@@ -110,26 +112,26 @@ mcp_servers:
     args: ["-m", "glados.mcp.system_info_server"]
 ```
 
-Встроенные: `system_info`, `time_info`, `disk_info`, `network_info`, `process_info`, `power_info`, `memory`
+Built-in: `system_info`, `time_info`, `disk_info`, `network_info`, `process_info`, `power_info`, `memory`
 
-Подробнее: [docs/mcp.md](/docs/mcp.md)
+Details: [docs/mcp.md](/docs/mcp.md)
 
-## Управление TUI
+## TUI Controls
 
-| Сочетание | Действие |
-|-----------|----------|
-| `Ctrl+P` | Палитра команд |
-| `F1` | Помощь |
-| `Ctrl+D` | Панель диалога |
-| `Ctrl+L` | Панель логов |
-| `Ctrl+S` | Панель статуса |
-| `Ctrl+A` | Панель автономии |
-| `Ctrl+U` | Панель очередей |
-| `Ctrl+M` | Панель MCP |
-| `Ctrl+I` | Переключить правые панели |
-| `Ctrl+R` | Восстановить все панели |
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl+P` | Command palette |
+| `F1` | Help |
+| `Ctrl+D` | Dialog panel |
+| `Ctrl+L` | Logs panel |
+| `Ctrl+S` | Status panel |
+| `Ctrl+A` | Autonomy panel |
+| `Ctrl+U` | Queue panel |
+| `Ctrl+M` | MCP panel |
+| `Ctrl+I` | Toggle right panels |
+| `Ctrl+R` | Restore all panels |
 
-## Архитектура
+## Architecture
 
 ```mermaid
 flowchart TB
@@ -172,50 +174,50 @@ flowchart TB
     llm <-->|MCP| tools[Tools]
 ```
 
-| Компонент | Технология | Назначение |
-|-----------|------------|------------|
-| ASR | Parakeet TDT (ONNX) | Распознавание речи (EN) |
-| VAD | Silero VAD (ONNX) | Детекция голоса |
-| TTS (EN) | Kokoro / GLaDOS | Синтез речи (английский) |
-| TTS (RU) | TeraTTS + ruaccent | Синтез речи (русский) |
-| Vision | FastVLM (ONNX) | Компьютерное зрение |
-| LLM | OpenAI-compatible API | Рассуждение, инструменты |
-| Tools | MCP Protocol | Расширяемость |
-| Memory | MCP + Subagent | Долгосрочная память |
-| Emotions | PAD + HEXACO | Эмоциональное состояние |
+| Component | Technology | Purpose |
+|-----------|------------|---------|
+| ASR | Parakeet TDT (ONNX) | Speech recognition (EN) |
+| VAD | Silero VAD (ONNX) | Voice activity detection |
+| TTS (EN) | Kokoro / GLaDOS | English speech synthesis |
+| TTS (RU) | TeraTTS + ruaccent | Russian speech synthesis |
+| Vision | FastVLM (ONNX) | Scene understanding |
+| LLM | OpenAI-compatible API | Reasoning, tool use |
+| Tools | MCP Protocol | Extensibility |
+| Memory | MCP + Subagent | Long-term memory |
+| Emotions | PAD + HEXACO | Emotional state |
 
-## Зависимости для русского языка
+## Russian Language Dependencies
 
 ```bash
 uv pip install -e ".[cpu,ru]"
 ```
 
-Устанавливает:
-- **TeraTTS** — VITS-модель для русского TTS (модель `TeraTTS/glados2-g2p-vits` скачивается автоматически с HuggingFace при первом запуске)
-- **ruaccent** — расстановка ударений в русском тексте
+Installs:
+- **TeraTTS** — VITS model for Russian TTS (model `TeraTTS/glados2-g2p-vits` downloads automatically from HuggingFace on first run)
+- **ruaccent** — Russian text stress placement
 
-## Устранение неполадок
+## Troubleshooting
 
-**GLaDOS отвечает сама себе:**
-Используйте наушники или микрофон с эхоподавлением. Или `interruptible: false`.
+**GLaDOS responds to herself:**
+Use headphones or a mic with echo cancellation. Or set `interruptible: false`.
 
-**Медленный запуск:**
-ASR-модель загружается при старте (~600MB). В русском конфиге загрузка отложена до первого `/asr on`.
+**Slow startup:**
+ASR model loads at startup (~600MB). In the Russian config, loading is deferred until `/asr on`.
 
-**TTS не работает (русский):**
-Убедитесь что установлены зависимости: `uv pip install -e ".[cpu,ru]"`
+**Russian TTS not working:**
+Make sure dependencies are installed: `uv pip install -e ".[cpu,ru]"`
 
 **Windows DLL error:**
-Установите [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
+Install [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
 
-## Благодарности
+## Credits
 
-- [dnhkng/GLaDOS](https://github.com/dnhkng/GLaDOS) — оригинальный проект
-- [TeraTTS](https://github.com/Tera2Space/TeraTTS) — русский TTS
-- [ruaccent](https://github.com/Den4ikAI/ruaccent) — акцентуация русского текста
-- [KPEKEP/GLaDOS](https://github.com/KPEKEP/GLaDOS) — вдохновение для русской интеграции
-- [Ollama](https://ollama.ai/) — локальный запуск LLM
+- [dnhkng/GLaDOS](https://github.com/dnhkng/GLaDOS) — original project
+- [TeraTTS](https://github.com/Tera2Space/TeraTTS) — Russian TTS
+- [ruaccent](https://github.com/Den4ikAI/ruaccent) — Russian text accentuation
+- [KPEKEP/GLaDOS](https://github.com/KPEKEP/GLaDOS) — inspiration for Russian integration
+- [Ollama](https://ollama.ai/) — local LLM inference
 
-## Лицензия
+## License
 
-Оригинальная лицензия проекта. См. [LICENSE.txt](LICENSE.txt).
+Original project license. See [LICENSE.txt](LICENSE.txt).
