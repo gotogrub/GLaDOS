@@ -799,8 +799,10 @@ class Glados:
             Glados: A new Glados instance configured with the provided settings
         """
 
+        # Defer ASR loading when it starts muted to speed up launch.
         asr_model: TranscriberProtocol | None = None
-        if config.input_mode in {"audio", "both"}:
+        needs_asr = config.input_mode in {"audio", "both"}
+        if needs_asr and not config.asr_muted:
             asr_model = get_audio_transcriber(
                 engine_type=config.asr_engine,
             )
@@ -810,7 +812,7 @@ class Glados:
 
         audio_io = get_audio_system(backend_type=config.audio_io)
 
-        return cls(
+        instance = cls(
             asr_model=asr_model,
             tts_model=tts_model,
             audio_io=audio_io,
@@ -831,6 +833,9 @@ class Glados:
             asr_muted=config.asr_muted,
             llm_headers=config.llm_headers,
         )
+        # Store engine type so ASR can be loaded lazily on first unmute.
+        instance._asr_engine_type = config.asr_engine
+        return instance
 
     @classmethod
     def from_yaml(cls, path: str) -> "Glados":
@@ -930,6 +935,42 @@ class Glados:
         if muted:
             self.asr_muted_event.set()
         else:
+            # Lazy-load ASR model on first unmute if it was deferred.
+            if self._asr_model is None and hasattr(self, "_asr_engine_type"):
+                logger.info("Loading ASR model (deferred)...")
+                self._asr_model = get_audio_transcriber(engine_type=self._asr_engine_type)
+                self._asr_model.transcribe_file(resource_path("data/0.wav"))
+                logger.success("ASR model loaded.")
+            # Create and start speech listener if it doesn't exist yet.
+            if self.speech_listener is None and self._asr_model is not None:
+                self.speech_listener = SpeechListener(
+                    audio_io=self.audio_io,
+                    llm_queue=self.llm_queue_priority,
+                    asr_model=self._asr_model,
+                    wake_word=self.wake_word,
+                    interruptible=self.interruptible,
+                    shutdown_event=self.shutdown_event,
+                    currently_speaking_event=self.currently_speaking_event,
+                    processing_active_event=self.processing_active_event,
+                    pause_time=self.PAUSE_TIME,
+                    interaction_state=self.interaction_state,
+                    observability_bus=self.observability_bus,
+                    asr_muted_event=self.asr_muted_event,
+                    audio_state=self.audio_state,
+                    on_interrupt=lambda _: self._push_emotion_event("user", "User interrupted me mid-sentence"),
+                )
+                thread = threading.Thread(
+                    target=self.speech_listener.run,
+                    name="SpeechListener",
+                    daemon=True,
+                )
+                thread.start()
+                self.component_threads.append(thread)
+                try:
+                    self.audio_io.start_listening()
+                    logger.success("Audio input stream started for ASR.")
+                except RuntimeError as e:
+                    logger.error(f"Failed to start audio input: {e}")
             self.asr_muted_event.clear()
         if self.speech_listener:
             self.speech_listener.reset()

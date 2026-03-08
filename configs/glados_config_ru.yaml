@@ -4,9 +4,9 @@ Glados:
   api_key: null
   interruptible: true
   audio_io: "sounddevice"
-  input_mode: "text"  # audio, text, or both (ASR пока только английский)
+  input_mode: "both"  # both = микрофон + текст; ASR стартует в muted, включается через /asr on
   tts_enabled: true
-  asr_muted: true  # ASR (Parakeet) не поддерживает русский
+  asr_muted: true  # ASR (Parakeet) — английский; включить через /asr on или unmute в TUI
   tui_theme: "aperture"
   asr_engine: "tdt"
   llm_headers: null
