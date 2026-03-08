@@ -127,9 +127,13 @@ class SpeechListener:
                 except queue.Empty:
                     # Timeout occurred, loop again to check shutdown_event
                     continue
-                except (OSError, RuntimeError) as e:  # More specific exceptions
-                    if not self.shutdown_event.is_set():  # Only log if not shutting down
+                except (OSError, RuntimeError) as e:
+                    if not self.shutdown_event.is_set():
                         logger.error(f"Error in listen loop ({type(e).__name__}): {e}")
+                    continue
+                except Exception as e:
+                    logger.opt(exception=True).error(f"ASR error ({type(e).__name__}): {e}")
+                    self.reset()
                     continue
 
             logger.info("Shutdown event detected in listen loop, exiting loop.")

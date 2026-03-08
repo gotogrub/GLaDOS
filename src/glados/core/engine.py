@@ -943,6 +943,12 @@ class Glados:
                 logger.success("ASR model loaded.")
             # Create and start speech listener if it doesn't exist yet.
             if self.speech_listener is None and self._asr_model is not None:
+                # Ensure audio input stream is running before starting listener.
+                try:
+                    self.audio_io.start_listening()
+                    logger.success("Audio input stream started for ASR.")
+                except RuntimeError as e:
+                    logger.error(f"Failed to start audio input: {e}")
                 self.speech_listener = SpeechListener(
                     audio_io=self.audio_io,
                     llm_queue=self.llm_queue_priority,
@@ -966,11 +972,6 @@ class Glados:
                 )
                 thread.start()
                 self.component_threads.append(thread)
-                try:
-                    self.audio_io.start_listening()
-                    logger.success("Audio input stream started for ASR.")
-                except RuntimeError as e:
-                    logger.error(f"Failed to start audio input: {e}")
             self.asr_muted_event.clear()
         if self.speech_listener:
             self.speech_listener.reset()
