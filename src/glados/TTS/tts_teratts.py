@@ -4,6 +4,39 @@ import numpy as np
 from numpy.typing import NDArray
 
 
+def _patch_ruaccent_accent_model() -> None:
+    """Patch ruaccent's AccentModel to inject token_type_ids for newer transformers.
+
+    transformers >= 5.x stopped returning token_type_ids by default, but the
+    ruaccent ONNX model requires them.  This monkey-patch wraps the original
+    ``put_accent`` so the missing input is added automatically.
+    """
+    from ruaccent.accent_model import AccentModel  # type: ignore[import-untyped]
+
+    _orig_put_accent = AccentModel.put_accent
+
+    def _patched_put_accent(self, word):  # type: ignore[no-untyped-def]
+        lower_word = word.lower()
+        inputs = self.tokenizer(lower_word, return_tensors="np")
+        inputs = {k: v.astype(np.int64) for k, v in inputs.items()}
+        if "token_type_ids" not in inputs:
+            inputs["token_type_ids"] = np.zeros_like(inputs["input_ids"])
+        outputs = self.session.run(None, inputs)
+        output_names = {o.name: i for i, o in enumerate(self.session.get_outputs())}
+        logits = outputs[output_names["logits"]]
+        from ruaccent.accent_model import softmax  # type: ignore[import-untyped]
+        probabilities = softmax(logits)
+        scores = np.max(probabilities, axis=-1)[0]
+        labels = np.argmax(logits, axis=-1)[0]
+        pred_with_scores = [
+            {"label": self.id2label[str(label)], "score": float(score)}
+            for label, score in zip(labels, scores)
+        ]
+        return self.render_stress(word, pred_with_scores)
+
+    AccentModel.put_accent = _patched_put_accent
+
+
 class SpeechSynthesizer:
     """Russian TTS synthesizer using TeraTTS (VITS) with ruaccent for stress placement.
 
@@ -30,6 +63,8 @@ class SpeechSynthesizer:
         from TeraTTS import TTS  # type: ignore[import-untyped]
         from ruaccent import RUAccent  # type: ignore[import-untyped]
 
+        _patch_ruaccent_accent_model()
+
         self.sample_rate = self.SAMPLE_RATE
         self.length_scale = length_scale
 
@@ -54,5 +89,5 @@ class SpeechSynthesizer:
             Audio samples as float32 numpy array at 22050 Hz.
         """
         processed = self._accentizer.process_all(text.strip())
-        audio: NDArray[np.float32] = self._tts(processed, play=False, length_scale=self.length_scale)
+        audio: NDArray[np.float32] = self._tts(processed, play=False, lenght_scale=self.length_scale)
         return np.array(audio, dtype=np.float32)

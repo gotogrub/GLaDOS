@@ -183,7 +183,7 @@ class Glados:
 
     def __init__(
         self,
-        asr_model: TranscriberProtocol,
+        asr_model: TranscriberProtocol | None,
         tts_model: SpeechSynthesizerProtocol,
         audio_io: AudioProtocol,
         completion_url: HttpUrl,
@@ -332,7 +332,8 @@ class Glados:
         self._stc = stc.SpokenTextConverter()
 
         # warm up onnx ASR model, this is needed to avoid long pauses on first request
-        self._asr_model.transcribe_file(resource_path("data/0.wav"))
+        if self._asr_model is not None:
+            self._asr_model.transcribe_file(resource_path("data/0.wav"))
 
         # Initialize queues for inter-thread communication
         self._autonomy_inflight = InFlightCounter()
@@ -798,9 +799,11 @@ class Glados:
             Glados: A new Glados instance configured with the provided settings
         """
 
-        asr_model = get_audio_transcriber(
-            engine_type=config.asr_engine,
-        )
+        asr_model: TranscriberProtocol | None = None
+        if config.input_mode in {"audio", "both"}:
+            asr_model = get_audio_transcriber(
+                engine_type=config.asr_engine,
+            )
 
         tts_model: SpeechSynthesizerProtocol
         tts_model = get_speech_synthesizer(config.voice)
