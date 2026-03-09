@@ -5,7 +5,10 @@ from typing import Any, Protocol
 
 from numpy.typing import NDArray
 
-from .mel_spectrogram import MelSpectrogramCalculator
+try:
+    from .mel_spectrogram import MelSpectrogramCalculator
+except ImportError:
+    MelSpectrogramCalculator = None  # type: ignore[assignment,misc]
 
 
 class TranscriberProtocol(Protocol):

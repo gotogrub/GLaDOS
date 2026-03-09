@@ -36,7 +36,7 @@ ollama pull qwen2.5:7b      # slower, supports tools + good Russian
 git clone https://github.com/gotogrub/GLaDOS.git
 cd GLaDOS
 python scripts/install.py
-uv pip install -e ".[cpu,ru]"
+uv pip install -e ".[cpu,ru,tui]"
 ```
 
 ### 3. Download models
@@ -260,7 +260,7 @@ flowchart TB
 ## Russian Language Dependencies
 
 ```bash
-uv pip install -e ".[cpu,ru]"
+uv pip install -e ".[cpu,ru,tui]"
 ```
 
 Installs:
@@ -280,7 +280,7 @@ ASR model loads at startup. Use `asr_muted: true` to defer loading until `/asr o
 Set `tools_enabled: false` for models like Gemma 3 that don't support function calling.
 
 **Russian TTS not working:**
-Make sure dependencies are installed: `uv pip install -e ".[cpu,ru]"`
+Make sure dependencies are installed: `uv pip install -e ".[cpu,ru,tui]"`
 
 **Logs:**
 All logs are written to `glados.log` in the project root.

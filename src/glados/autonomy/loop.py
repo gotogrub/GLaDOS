@@ -71,7 +71,7 @@ class AutonomyLoop:
             if isinstance(event, TaskUpdateEvent) and not event.notify_user:
                 continue
 
-            if self._should_skip():
+            if self._should_skip(event):
                 continue
 
             if (
@@ -87,9 +87,11 @@ class AutonomyLoop:
             self._dispatch(prompt)
         logger.info("AutonomyLoop thread finished.")
 
-    def _should_skip(self) -> bool:
+    def _should_skip(self, event: object | None = None) -> bool:
+        # Allow vision events through even while speaking — they are rare and important
         if self._currently_speaking_event.is_set():
-            return True
+            if not isinstance(event, VisionUpdateEvent):
+                return True
         if self._config.cooldown_s <= 0:
             return False
         return (time.time() - self._last_prompt_ts) < self._config.cooldown_s

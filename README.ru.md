@@ -36,7 +36,7 @@ ollama pull qwen2.5:7b      # медленнее, поддерживает tools
 git clone https://github.com/gotogrub/GLaDOS.git
 cd GLaDOS
 python scripts/install.py
-uv pip install -e ".[cpu,ru]"
+uv pip install -e ".[cpu,ru,tui]"
 ```
 
 ### 3. Скачать модели
@@ -260,7 +260,7 @@ flowchart TB
 ## Зависимости для русского языка
 
 ```bash
-uv pip install -e ".[cpu,ru]"
+uv pip install -e ".[cpu,ru,tui]"
 ```
 
 Устанавливает:
@@ -280,7 +280,7 @@ ASR-модель загружается при старте. Используй�
 Установите `tools_enabled: false` для моделей вроде Gemma 3.
 
 **TTS не работает (русский):**
-Убедитесь что установлены зависимости: `uv pip install -e ".[cpu,ru]"`
+Убедитесь что установлены зависимости: `uv pip install -e ".[cpu,ru,tui]"`
 
 **Логи:**
 Все логи пишутся в `glados.log` в корне проекта.

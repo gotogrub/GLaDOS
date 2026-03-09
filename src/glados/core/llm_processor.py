@@ -763,8 +763,10 @@ class LanguageModelProcessor:
                                             if chunk:
                                                 if isinstance(chunk, list):
                                                     self._process_tool_chunks(tool_calls_buffer, chunk)
-                                                elif not autonomy_mode:
-                                                    # Extract thinking tags before TTS (auto-detects format)
+                                                elif not autonomy_mode or not allow_tools:
+                                                    # In priority mode: always send to TTS
+                                                    # In autonomy mode without tools: send to TTS directly
+                                                    # (autonomy with tools uses speak/do_nothing tool calls instead)
                                                     speakable, in_thinking, harmony_mode = self._extract_thinking(
                                                         chunk, in_thinking, thinking_buffer, harmony_mode
                                                     )

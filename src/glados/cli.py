@@ -1,12 +1,13 @@
+from __future__ import annotations
+
 import argparse
 import asyncio
 from hashlib import sha256
 from pathlib import Path
 import sys
+from typing import Any
 
 import httpx
-from rich import print as rprint
-from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn
 import sounddevice as sd  # type: ignore
 
 from .core.engine import Glados, GladosConfig
@@ -79,7 +80,7 @@ async def download_with_progress(
     url: str,
     file_path: Path,
     expected_checksum: str,
-    progress: Progress,
+    progress: Any,
 ) -> bool:
     """
     Download a single file with progress tracking and SHA-256 checksum verification.
@@ -133,6 +134,9 @@ async def download_models() -> int:
     Returns:
         int: Exit code (0 for success, 1 for failure)
     """
+    from rich import print as rprint  # noqa: F811
+    from rich.progress import BarColumn, DownloadColumn, Progress, TextColumn
+
     with Progress(
         TextColumn("[grey50][progress.description]{task.description}"),
         BarColumn(),

@@ -11,7 +11,10 @@ import threading
 import time
 from typing import Any
 
-from Levenshtein import distance
+try:
+    from Levenshtein import distance
+except ImportError:
+    distance = None  # type: ignore[assignment]
 from loguru import logger
 import numpy as np
 from numpy.typing import NDArray
@@ -253,6 +256,9 @@ class SpeechListener:
         """
         if self.wake_word is None:
             raise ValueError("Wake word should not be None")
+        if distance is None:
+            logger.warning("Levenshtein not installed, wake word detection disabled. Install with: pip install levenshtein")
+            return True
 
         words = text.split()
         closest_distance = min(distance(word.lower(), self.wake_word) for word in words)
