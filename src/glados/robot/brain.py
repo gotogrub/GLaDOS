@@ -83,7 +83,14 @@ class BrainWorker:
         except queue.Empty:
             pass
         try:
-            return self._aq.get_nowait()
+            item = self._aq.get_nowait()
+            # VisionEvent from VisionWorker → convert to dict
+            if not isinstance(item, dict):
+                return {
+                    "content": getattr(item, "description", str(item)),
+                    "autonomy": True,
+                }
+            return item
         except queue.Empty:
             pass
         time.sleep(0.05)
