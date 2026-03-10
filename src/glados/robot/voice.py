@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass
 
 import numpy as np
+import sounddevice as sd
 from loguru import logger
 from numpy.typing import NDArray
 
@@ -107,7 +108,15 @@ class SpeakerWorker:
             self._speaking.set()
             self._audio.start_speaking(chunk.audio, self._sr, chunk.text)
 
-            while self._audio.check_if_speaking() and not self._shutdown.is_set():
+            # Wait for playback to finish (sd.play is non-blocking,
+            # _is_playing never resets on its own)
+            duration = chunk.audio.size / self._sr
+            deadline = time.monotonic() + duration + 0.5
+            while time.monotonic() < deadline and not self._shutdown.is_set():
+                stream = sd.get_stream()
+                if stream is None or not stream.active:
+                    break
                 time.sleep(0.02)
+            self._audio.stop_speaking()
 
         logger.info("SpeakerWorker stopped.")

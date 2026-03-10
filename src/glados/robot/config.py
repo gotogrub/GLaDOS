@@ -33,6 +33,7 @@ class RobotConfig(BaseModel):
     personality: str = "Ты — ГЛаДОС из Portal. Саркастичный ИИ. Отвечай кратко, на русском."
     knowledge_path: str | None = "data/knowledge.json"
     face_db: str = "faces/"
+    face_names: dict[str, str] | None = None
     vision: VisionSettings = VisionSettings()
     autonomy: AutonomySettings = AutonomySettings()
     interruptible: bool = True

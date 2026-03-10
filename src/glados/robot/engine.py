@@ -108,6 +108,7 @@ class RobotEngine:
             knowledge_store=self._knowledge,
             autonomy_system_prompt=self._config.autonomy.tick_prompt,
             llm_options=self._config.llm_options,
+            face_names=self._config.face_names,
         )
         self._processing = brain.processing_event
 
@@ -166,6 +167,7 @@ class RobotEngine:
         # Play announcement
         if self._config.announcement:
             self._tts_q.put(self._config.announcement)
+            self._tts_q.put("<EOS>")
             self._processing.set()
 
         logger.success("RobotEngine ready ({} threads).", len(self._threads))

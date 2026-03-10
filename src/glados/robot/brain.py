@@ -37,6 +37,7 @@ class BrainWorker:
         knowledge_store: KnowledgeStore | None = None,
         autonomy_system_prompt: str | None = None,
         llm_options: dict[str, Any] | None = None,
+        face_names: dict[str, str] | None = None,
     ) -> None:
         self._pq = priority_queue
         self._aq = autonomy_queue
@@ -51,6 +52,7 @@ class BrainWorker:
         self._knowledge = knowledge_store
         self._autonomy_prompt = autonomy_system_prompt
         self._options = llm_options or {}
+        self._face_names = face_names or {}
         self._processing = threading.Event()
 
         self._headers = {"Content-Type": "application/json"}
@@ -170,6 +172,14 @@ class BrainWorker:
         if self._vision:
             desc = self._vision.snapshot()
             if desc:
+                # Inject face name mappings dynamically
+                if self._face_names:
+                    mapped = []
+                    for folder, real_name in self._face_names.items():
+                        if folder in desc:
+                            mapped.append(f"{folder} — это {real_name}")
+                    if mapped:
+                        desc += " (" + "; ".join(mapped) + ")"
                 extra.append({"role": "system", "content": f"[vision] {desc}"})
 
         if self._knowledge:
