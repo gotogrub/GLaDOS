@@ -127,6 +127,10 @@ class BrainWorker:
                 for line in resp.iter_lines():
                     if self._shutdown.is_set() or not self._processing.is_set():
                         break
+                    # Priority request interrupts autonomy generation
+                    if not self._pq.empty():
+                        logger.debug("Priority request arrived, interrupting")
+                        break
                     if not line:
                         continue
                     chunk = self._parse_chunk(line)
@@ -141,8 +145,10 @@ class BrainWorker:
                     if speakable:
                         full_response.append(speakable)
                         sentence_buffer.append(speakable)
-                        if speakable.strip() in self.PUNCTUATION_SET:
-                            text = "".join(sentence_buffer).strip()
+                        combined = "".join(sentence_buffer)
+                        # Split on sentence-ending punctuation followed by space or end
+                        if any(combined.rstrip().endswith(p) for p in self.PUNCTUATION_SET):
+                            text = combined.strip()
                             if text:
                                 self._tts.put(text)
                             sentence_buffer.clear()

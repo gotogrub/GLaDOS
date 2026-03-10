@@ -58,7 +58,7 @@ class FaceRecognizer:
 
     _DET_SIZE: int = 640
     _STRIDES: tuple[int, ...] = (8, 16, 32)
-    _SCORE_THRESH: float = 0.5
+    _SCORE_THRESH: float = 0.65
     _NMS_THRESH: float = 0.4
 
     def __init__(self, model_dir: str | Path, face_db_dir: str | Path | None = None) -> None:
@@ -220,14 +220,17 @@ class FaceRecognizer:
             return None
 
     def recognize(
-        self, frame: NDArray[np.uint8], threshold: float = 0.4
+        self, frame: NDArray[np.uint8], threshold: float = 0.6
     ) -> list[dict]:
         faces = self.detect(frame)
         results = []
         for bbox in faces:
+            # Skip tiny detections (likely false positives)
+            bw, bh = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            if bw < 40 or bh < 40:
+                continue
             emb = self.embed(frame, bbox)
             if emb is None:
-                results.append({"name": "unknown", "similarity": 0.0, "bbox": bbox})
                 continue
             matches = self._db.match(emb, threshold=threshold)
             if matches:

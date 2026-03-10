@@ -1,5 +1,5 @@
 Robot:
-  llm_model: "gemma3:4b"
+  llm_model: "qwen2.5:7b"
   completion_url: "http://localhost:11434/api/chat"
   api_key: null
   tools_enabled: false
