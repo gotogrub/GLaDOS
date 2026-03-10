@@ -49,12 +49,17 @@ class FaceDB:
 
 
 class FaceRecognizer:
-    """Face detection + recognition using InsightFace ONNX models.
+    """Face detection + recognition using InsightFace ONNX models (buffalo_s).
 
     Models required in model_dir:
-    - det_scrfd_2.5g.onnx  (face detection)
-    - arc_w600k_r18.onnx   (face embedding)
+    - det_500m.onnx      (SCRFD face detection, ~2.5MB)
+    - w600k_mbf.onnx     (MobileFaceNet embedding, ~13MB)
     """
+
+    _DET_SIZE: int = 640
+    _STRIDES: tuple[int, ...] = (8, 16, 32)
+    _SCORE_THRESH: float = 0.5
+    _NMS_THRESH: float = 0.4
 
     def __init__(self, model_dir: str | Path, face_db_dir: str | Path | None = None) -> None:
         import onnxruntime as ort
@@ -62,16 +67,15 @@ class FaceRecognizer:
         self._model_dir = Path(model_dir)
         self._db = FaceDB()
 
-        det_path = self._model_dir / "det_scrfd_2.5g.onnx"
+        det_path = self._model_dir / "det_500m.onnx"
         if not det_path.exists():
             raise FileNotFoundError(f"Face detection model not found: {det_path}")
         self._det_session = ort.InferenceSession(
             str(det_path), providers=["CPUExecutionProvider"]
         )
         self._det_input_name = self._det_session.get_inputs()[0].name
-        self._det_input_shape = self._det_session.get_inputs()[0].shape
 
-        emb_path = self._model_dir / "arc_w600k_r18.onnx"
+        emb_path = self._model_dir / "w600k_mbf.onnx"
         if not emb_path.exists():
             raise FileNotFoundError(f"Face embedding model not found: {emb_path}")
         self._emb_session = ort.InferenceSession(
@@ -79,8 +83,23 @@ class FaceRecognizer:
         )
         self._emb_input_name = self._emb_session.get_inputs()[0].name
 
+        # Pre-build anchor grids for each stride
+        self._anchors = self._build_anchors()
+
         if face_db_dir:
             self._load_face_db(Path(face_db_dir))
+
+    def _build_anchors(self) -> dict[int, NDArray[np.float32]]:
+        """Pre-compute anchor centers for each stride."""
+        anchors = {}
+        for stride in self._STRIDES:
+            feat = self._DET_SIZE // stride
+            grid_y, grid_x = np.mgrid[:feat, :feat].astype(np.float32)
+            centers = np.stack([grid_x.ravel(), grid_y.ravel()], axis=1) * stride
+            # 2 anchors per position
+            centers = np.concatenate([centers, centers], axis=0)
+            anchors[stride] = centers
+        return anchors
 
     def _load_face_db(self, face_db_dir: Path) -> None:
         if not face_db_dir.exists():
@@ -107,43 +126,75 @@ class FaceRecognizer:
                 logger.success("FaceID: Loaded '{}' ({} photos)", name, len(embeddings))
 
     def detect(self, frame: NDArray[np.uint8]) -> list[tuple[int, int, int, int]]:
+        """Detect faces using SCRFD. Returns list of (x1, y1, x2, y2) in original frame coords."""
         h, w = frame.shape[:2]
-        target_size = (self._det_input_shape[3], self._det_input_shape[2])
+        sz = self._DET_SIZE
 
-        resized = cv2.resize(frame, target_size)
-        blob = cv2.dnn.blobFromImage(
-            resized, scalefactor=1.0 / 128.0, size=target_size,
-            mean=(127.5, 127.5, 127.5), swapRB=True
-        )
+        # Preprocess: resize with letterbox, normalize
+        scale = min(sz / h, sz / w)
+        nh, nw = int(h * scale), int(w * scale)
+        resized = cv2.resize(frame, (nw, nh))
+        padded = np.full((sz, sz, 3), 0, dtype=np.uint8)
+        padded[:nh, :nw] = resized
+
+        blob = (padded.astype(np.float32) - 127.5) / 128.0
+        blob = blob.transpose(2, 0, 1)[np.newaxis]  # NCHW
 
         outputs = self._det_session.run(None, {self._det_input_name: blob})
+        # Outputs: [scores_8, scores_16, scores_32, bboxes_8, bboxes_16, bboxes_32, kps_8, kps_16, kps_32]
+        n_strides = len(self._STRIDES)
+        all_scores = outputs[:n_strides]
+        all_bboxes = outputs[n_strides:n_strides * 2]
 
         boxes = []
-        scale_x = w / target_size[0]
-        scale_y = h / target_size[1]
+        scores = []
+        for i, stride in enumerate(self._STRIDES):
+            sc = all_scores[i].ravel()  # (N,)
+            bb = all_bboxes[i]  # (N, 4) — distances from anchor
+            mask = sc > self._SCORE_THRESH
+            if not mask.any():
+                continue
+            sc = sc[mask]
+            bb = bb[mask]
+            anchors = self._anchors[stride][mask]
 
-        for i in range(0, len(outputs), 3):
-            if i + 1 >= len(outputs):
-                break
-            scores = outputs[i]
-            bboxes = outputs[i + 1]
+            # Decode: anchor_center ± distance * stride
+            x1 = anchors[:, 0] - bb[:, 0] * stride
+            y1 = anchors[:, 1] - bb[:, 1] * stride
+            x2 = anchors[:, 0] + bb[:, 2] * stride
+            y2 = anchors[:, 1] + bb[:, 3] * stride
 
-            for j in range(scores.shape[0]):
-                for k in range(scores.shape[1]):
-                    score = float(scores[j, k, 0]) if scores.ndim == 3 else float(scores[j, k])
-                    if score < 0.5:
-                        continue
-                    if bboxes.ndim == 3:
-                        bbox = bboxes[j, k]
-                    else:
-                        bbox = bboxes[j]
-                    x1 = int(bbox[0] * scale_x)
-                    y1 = int(bbox[1] * scale_y)
-                    x2 = int(bbox[2] * scale_x)
-                    y2 = int(bbox[3] * scale_y)
-                    boxes.append((x1, y1, x2, y2))
+            for j in range(len(sc)):
+                boxes.append([x1[j], y1[j], x2[j], y2[j]])
+                scores.append(float(sc[j]))
 
-        return boxes
+        if not boxes:
+            return []
+
+        # NMS
+        boxes_arr = np.array(boxes, dtype=np.float32)
+        scores_arr = np.array(scores, dtype=np.float32)
+        indices = cv2.dnn.NMSBoxes(
+            boxes_arr.tolist(), scores_arr.tolist(),
+            self._SCORE_THRESH, self._NMS_THRESH,
+        )
+        if len(indices) == 0:
+            return []
+        indices = indices.flatten()
+
+        # Map back to original frame coordinates
+        result = []
+        for idx in indices:
+            bx = boxes_arr[idx]
+            ox1 = int(bx[0] / scale)
+            oy1 = int(bx[1] / scale)
+            ox2 = int(bx[2] / scale)
+            oy2 = int(bx[3] / scale)
+            result.append((
+                max(0, ox1), max(0, oy1),
+                min(w, ox2), min(h, oy2),
+            ))
+        return result
 
     def embed(
         self, frame: NDArray[np.uint8], bbox: tuple[int, int, int, int]
