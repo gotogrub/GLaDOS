@@ -393,6 +393,15 @@ def main() -> int:
         help="Override TUI theme (aperture, ice, matrix, mono, ember)",
     )
 
+    # Robot command
+    robot_parser = subparsers.add_parser("robot", help="Start GLaDOS in robot mode (minimal engine)")
+    robot_parser.add_argument(
+        "--config",
+        type=str,
+        default=resource_path("configs/robot_config.yaml"),
+        help="Path to robot configuration file",
+    )
+
     # Say command
     say_parser = subparsers.add_parser("say", help="Make GLaDOS speak text")
     say_parser.add_argument("text", type=str, help="Text for GLaDOS to speak")
@@ -428,6 +437,12 @@ def main() -> int:
                 asr_muted=args.asr_muted,
                 theme=args.theme,
             )
+        elif args.command == "robot":
+            from glados.robot.config import RobotConfig
+            from glados.robot.engine import RobotEngine
+            config = RobotConfig.from_yaml(args.config)
+            engine = RobotEngine(config)
+            engine.run()
         else:
             # Default to start if no command specified
             start(DEFAULT_CONFIG)

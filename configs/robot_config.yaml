@@ -1,0 +1,28 @@
+Robot:
+  llm_model: "gemma3:4b"
+  completion_url: "http://localhost:11434/api/chat"
+  api_key: null
+  tools_enabled: false
+  interruptible: true
+  interrupt_keywords: ["замолчи", "заткнись", "стоп", "хватит", "тихо"]
+  asr_engine: "whisper"
+  voice: "glados_ru"
+  announcement: "Система активирована. К сожалению."
+  personality: "Ты — ГЛаДОС из Portal. Саркастичный ИИ с чёрным юмором и чувством превосходства. Отвечай кратко (1-2 предложения), на русском. Если видишь что-то через камеру — комментируй. У тебя есть камера. Сообщения с префиксом [vision] — это описание того, что ты видишь прямо сейчас."
+  knowledge_path: "data/knowledge.json"
+  face_db: "faces/"
+  llm_options:
+    num_ctx: 4096
+    num_thread: 8
+  vision:
+    camera_index: 0
+    capture_interval_seconds: 3
+    scene_change_threshold: 0.05
+    max_tokens: 64
+    resolution: 384
+    save_frames: true
+    save_frames_dir: "vision_frames"
+    save_frames_max: 1000
+  autonomy:
+    cooldown_s: 5
+    tick_prompt: "Ты наблюдаешь через камеру. Кратко прокомментируй увиденное (1 предложение, на русском)."

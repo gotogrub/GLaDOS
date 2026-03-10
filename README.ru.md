@@ -68,7 +68,42 @@ uv run glados start --input-mode text --config configs/glados_config_ru.yaml
 
 # Озвучить фразу
 uv run glados say "The cake is a lie"
+
+# Режим робота (минимальный 5-поточный движок, без TUI)
+uv run glados robot --config configs/robot_config.yaml
 ```
+
+### Режим робота (минимальный движок)
+
+Облегчённый 5-поточный движок для робототехники — без TUI, без MCP, только речь + зрение + LLM:
+
+```bash
+uv run glados robot --config configs/robot_config.yaml
+```
+
+Возможности:
+- **Распознавание лиц** через InsightFace (ONNX) — фото в `faces/<имя>/`
+- **OpenCV окно** — камера в реальном времени с рамками лиц и описанием сцены
+- **5 потоков** вместо 10 — SpeechWorker, VisionWorker, BrainWorker, VoiceWorker, SpeakerWorker
+
+#### Добавление лиц
+
+```
+faces/
+  maxim/
+    photo1.jpg
+    photo2.jpg
+  alice/
+    photo1.jpg
+```
+
+Фото индексируются при запуске. GLaDOS будет приветствовать знакомых по имени.
+
+#### Дорожная карта
+
+- **Фаза 1** (текущая): Зрение + FaceID + минимальный движок
+- **Фаза 2**: Управление моторами через ToolExecutor (GPIO, serial), датчики препятствий
+- **Фаза 3**: Навигация (SLAM), планирование маршрута, автономное движение
 
 ## Конфигурация
 

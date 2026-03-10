@@ -68,7 +68,42 @@ uv run glados start --input-mode text --config configs/glados_config_ru.yaml
 
 # Speak a phrase
 uv run glados say "The cake is a lie"
+
+# Robot mode (minimal 5-thread engine, no TUI)
+uv run glados robot --config configs/robot_config.yaml
 ```
+
+### Robot Mode (minimal engine)
+
+Stripped-down 5-thread engine for robotics — no TUI, no MCP, just speech + vision + LLM:
+
+```bash
+uv run glados robot --config configs/robot_config.yaml
+```
+
+Features:
+- **Face recognition** via InsightFace (ONNX) — put photos in `faces/<name>/`
+- **OpenCV debug window** — live camera with face bounding boxes and scene descriptions
+- **5 threads** instead of 10 — SpeechWorker, VisionWorker, BrainWorker, VoiceWorker, SpeakerWorker
+
+#### Adding faces
+
+```
+faces/
+  maxim/
+    photo1.jpg
+    photo2.jpg
+  alice/
+    photo1.jpg
+```
+
+Photos are indexed at startup. GLaDOS will greet recognized people by name.
+
+#### Roadmap
+
+- **Phase 1** (current): Vision + FaceID + minimal engine
+- **Phase 2**: Motor control via ToolExecutor (GPIO, serial), obstacle sensors
+- **Phase 3**: Navigation (SLAM), path planning, autonomous movement
 
 ## Configuration
 
