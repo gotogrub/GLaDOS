@@ -105,6 +105,10 @@ class FaceRecognizer:
         if not face_db_dir.exists():
             logger.warning("Face DB directory not found: {}", face_db_dir)
             return
+        # Use a softer detection threshold for DB enrollment photos
+        # (photos may be small, cropped, or lower quality than live camera)
+        saved_thresh = self._SCORE_THRESH
+        self._SCORE_THRESH = 0.3
         for person_dir in sorted(face_db_dir.iterdir()):
             if not person_dir.is_dir():
                 continue
@@ -120,10 +124,15 @@ class FaceRecognizer:
                     emb = self.embed(img, largest)
                     if emb is not None:
                         embeddings.append(emb)
+                else:
+                    logger.warning("FaceID: No face in {}", img_path.name)
             if embeddings:
                 avg = np.mean(embeddings, axis=0).astype(np.float32)
                 self._db.register(name, avg)
                 logger.success("FaceID: Loaded '{}' ({} photos)", name, len(embeddings))
+            else:
+                logger.warning("FaceID: No usable faces for '{}'", name)
+        self._SCORE_THRESH = saved_thresh
 
     def detect(self, frame: NDArray[np.uint8]) -> list[tuple[int, int, int, int]]:
         """Detect faces using SCRFD. Returns list of (x1, y1, x2, y2) in original frame coords."""
