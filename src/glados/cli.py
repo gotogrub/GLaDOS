@@ -439,9 +439,9 @@ def main() -> int:
             )
         elif args.command == "robot":
             from glados.robot.config import RobotConfig
-            from glados.robot.engine import RobotEngine
+            from glados.robot.engine_async import AsyncRobotEngine
             config = RobotConfig.from_yaml(args.config)
-            engine = RobotEngine(config)
+            engine = AsyncRobotEngine(config)
             engine.run()
         else:
             # Default to start if no command specified
