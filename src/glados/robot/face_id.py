@@ -58,8 +58,11 @@ class FaceRecognizer:
 
     _DET_SIZE: int = 640
     _STRIDES: tuple[int, ...] = (8, 16, 32)
-    _SCORE_THRESH: float = 0.65
+    _SCORE_THRESH: float = 0.5
     _NMS_THRESH: float = 0.4
+
+    # Detection models in preference order (best → smallest)
+    _DET_MODELS: tuple[str, ...] = ("det_10g.onnx", "det_2.5g.onnx", "det_500m.onnx")
 
     def __init__(self, model_dir: str | Path, face_db_dir: str | Path | None = None) -> None:
         import onnxruntime as ort
@@ -67,9 +70,19 @@ class FaceRecognizer:
         self._model_dir = Path(model_dir)
         self._db = FaceDB()
 
-        det_path = self._model_dir / "det_500m.onnx"
-        if not det_path.exists():
-            raise FileNotFoundError(f"Face detection model not found: {det_path}")
+        # Pick the best available detection model
+        det_path = None
+        for model_name in self._DET_MODELS:
+            candidate = self._model_dir / model_name
+            if candidate.exists():
+                det_path = candidate
+                break
+        if det_path is None:
+            raise FileNotFoundError(
+                f"No face detection model found in {self._model_dir}. "
+                f"Need one of: {', '.join(self._DET_MODELS)}"
+            )
+        logger.info("FaceID: using detection model {}", det_path.name)
         self._det_session = ort.InferenceSession(
             str(det_path), providers=["CPUExecutionProvider"]
         )
@@ -90,14 +103,17 @@ class FaceRecognizer:
             self._load_face_db(Path(face_db_dir))
 
     def _build_anchors(self) -> dict[int, NDArray[np.float32]]:
-        """Pre-compute anchor centers for each stride."""
+        """Pre-compute anchor centers for each stride (interleaved, 2 per position)."""
         anchors = {}
         for stride in self._STRIDES:
             feat = self._DET_SIZE // stride
-            grid_y, grid_x = np.mgrid[:feat, :feat].astype(np.float32)
-            centers = np.stack([grid_x.ravel(), grid_y.ravel()], axis=1) * stride
-            # 2 anchors per position
-            centers = np.concatenate([centers, centers], axis=0)
+            # mgrid[:h, :w] gives (y, x); [::-1] reverses to (x, y)
+            centers = np.stack(
+                np.mgrid[:feat, :feat][::-1], axis=-1
+            ).astype(np.float32)
+            centers = (centers * stride).reshape(-1, 2)
+            # 2 anchors per position — interleaved: [p0, p0, p1, p1, ...]
+            centers = np.stack([centers, centers], axis=1).reshape(-1, 2)
             anchors[stride] = centers
         return anchors
 
@@ -108,7 +124,7 @@ class FaceRecognizer:
         # Use a softer detection threshold for DB enrollment photos
         # (photos may be small, cropped, or lower quality than live camera)
         saved_thresh = self._SCORE_THRESH
-        self._SCORE_THRESH = 0.3
+        self._SCORE_THRESH = 0.2
         for person_dir in sorted(face_db_dir.iterdir()):
             if not person_dir.is_dir():
                 continue
