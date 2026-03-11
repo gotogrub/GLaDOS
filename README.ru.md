@@ -16,7 +16,7 @@
 - **Сохранение кадров** — `save_frames: true` сохраняет снимки с камеры и описания VLM на диск
 - **Проброс параметров LLM** — поле `llm_options` в конфиге для настройки Ollama (`num_ctx`, `num_thread` и др.)
 - **Ленивая загрузка ASR** — модель распознавания речи загружается только при первом включении
-- **Логирование в файл** — все логи пишутся в `glados.log` для отладки
+- **Логирование в файл** — логи каждого запуска в `logs/YYYY-MM-DD_runNN.log` с полной DEBUG-детализацией
 - **Облегчённый конфиг** — `configs/glados_config_ru_lite.yaml` для мини-ПК (qwen2.5:3b, CTC ASR, уменьшенное контекстное окно)
 
 ## Быстрый старт
@@ -73,37 +73,62 @@ uv run glados say "The cake is a lie"
 uv run glados robot --config configs/robot_config.yaml
 ```
 
-### Режим робота (минимальный движок)
+### Режим робота (async-движок)
 
-Облегчённый 5-поточный движок для робототехники — без TUI, без MCP, только речь + зрение + LLM:
+Событийно-ориентированный async-движок для робототехники — без TUI, без MCP, только речь + зрение + LLM со стримингом TTS:
 
 ```bash
 uv run glados robot --config configs/robot_config.yaml
+# или
+python -m glados robot --config configs/robot_config.yaml
 ```
 
+Архитектура:
+- **Async EventBus** — pub/sub в главном asyncio-цикле (события speech, vision, tts, tts_eos)
+- **AsyncBrain** — стримит токены LLM, отправляет TTS-чанки на середине предложения (порог 4 слова) для низкой задержки
+- **Thread-воркеры** — SpeechWorker, VisionWorker, SpeakerWorker с блокирующим I/O в daemon-потоках
+- **VoiceLoop** — async-задача синтеза TTS, мост text→audio через `asyncio.to_thread`
+- **Watchdog** — мониторинг потоков, логирование сбоев
+
 Возможности:
-- **Распознавание лиц** через InsightFace (ONNX) — фото в `faces/<имя>/`
-- **OpenCV окно** — камера в реальном времени с рамками лиц и описанием сцены
-- **5 потоков** вместо 10 — SpeechWorker, VisionWorker, BrainWorker, VoiceWorker, SpeakerWorker
+- **Распознавание лиц** через SCRFD + ArcFace (ONNX) с профилями и описаниями для каждого лица
+- **3 окна OpenCV** — живой поток камеры, анализируемые кадры с рамками лиц, текстовая панель VLM (кириллица через PIL)
+- **Потоковый TTS** — речь начинается до завершения генерации полного предложения
+- **Обрезка контекста** — хранит последние 10 пар сообщений для предотвращения роста TTFT
+- **Логи по запускам** — `logs/YYYY-MM-DD_runNN.log` с уровнем DEBUG
 
 #### Добавление лиц
 
 ```
 faces/
-  maxim/
+  creator/
     photo1.jpg
     photo2.jpg
   alice/
     photo1.jpg
 ```
 
-Фото индексируются при запуске. GLaDOS будет приветствовать знакомых по имени.
+Фото индексируются при запуске. Настройте профили лиц в `robot_config.yaml`:
+
+```yaml
+face_names:
+  creator:
+    name: "Создатель"
+    description: "Твой создатель. Молодой человек в очках. Обращайся уважительно, но в своём саркастичном стиле."
+  alice:
+    name: "Алиса"
+    description: "Коллега. Любит котов."
+```
+
+Описание инжектируется в контекст LLM при распознавании лица, чтобы GLaDOS знала, *с кем* она разговаривает.
 
 #### Дорожная карта
 
-- **Фаза 1** (текущая): Зрение + FaceID + минимальный движок
-- **Фаза 2**: Управление моторами через ToolExecutor (GPIO, serial), датчики препятствий
-- **Фаза 3**: Навигация (SLAM), планирование маршрута, автономное движение
+- **Фаза A** (готово): Критические фиксы — воспроизведение TTS, детекция FaceID, sd.wait()
+- **Фаза B** (готово): Async-архитектура — EventBus, AsyncBrain, потоковый TTS, Watchdog
+- **Фаза C** (план): PipelineMetrics, PulseAudio AEC, multiprocessing для CPU-задач
+- **Фаза D** (план): Управление моторами через ToolExecutor (GPIO, serial), датчики препятствий
+- **Фаза E** (план): Навигация (SLAM), планирование маршрута, автономное движение
 
 ## Конфигурация
 
@@ -238,6 +263,8 @@ mcp_servers:
 
 ## Архитектура
 
+### TUI-режим (полный агент)
+
 ```mermaid
 flowchart TB
     subgraph Input
@@ -279,6 +306,32 @@ flowchart TB
     llm <-->|MCP| tools[Tools]
 ```
 
+### Режим робота (async-движок)
+
+```mermaid
+flowchart LR
+    subgraph Threads["Потоки"]
+        mic[Микрофон] --> vad[VAD] --> asr[ASR]
+        cam[Камера] --> vlm[VLM]
+        vlm --> face[FaceID]
+    end
+
+    subgraph "AsyncIO EventBus"
+        asr -->|speech event| brain[AsyncBrain]
+        vlm -->|vision event| brain
+        face -->|профили лиц| ctx[ContextBuilder]
+        ctx --> brain
+        brain -->|tts event| chunk[ChunkSplitter]
+        chunk -->|поток| voice[VoiceLoop]
+    end
+
+    subgraph Воспроизведение
+        voice --> speaker[SpeakerWorker]
+    end
+
+    brain <-->|httpx stream| ollama[Ollama LLM]
+```
+
 | Компонент | Технология | Назначение |
 |-----------|------------|------------|
 | ASR (EN) | Parakeet TDT/CTC (ONNX) | Распознавание речи (английский) |
@@ -318,7 +371,7 @@ ASR-модель загружается при старте. Используй�
 Убедитесь что установлены зависимости: `uv pip install -e ".[cpu,ru,tui]"`
 
 **Логи:**
-Все логи пишутся в `glados.log` в корне проекта.
+В режиме робота логи пишутся в `logs/YYYY-MM-DD_runNN.log` (уровень DEBUG). В TUI-режиме — в stderr.
 
 **Windows DLL error:**
 Установите [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).

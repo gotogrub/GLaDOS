@@ -16,7 +16,7 @@ A fork of [dnhkng/GLaDOS](https://github.com/dnhkng/GLaDOS) with **Russian langu
 - **Vision frame saving** — `save_frames: true` saves camera snapshots with VLM descriptions to disk
 - **LLM options passthrough** — `llm_options` config field to tune Ollama parameters (`num_ctx`, `num_thread`, etc.)
 - **Lazy ASR loading** — speech recognition model loads only on first unmute, speeding up startup
-- **File logging** — all logs written to `glados.log` for debugging
+- **File logging** — per-run log files in `logs/YYYY-MM-DD_runNN.log` with full DEBUG detail
 - **Lite config** — `configs/glados_config_ru_lite.yaml` optimized for mini-PCs (qwen2.5:3b, CTC ASR, reduced context window)
 
 ## Quick Start
@@ -73,37 +73,62 @@ uv run glados say "The cake is a lie"
 uv run glados robot --config configs/robot_config.yaml
 ```
 
-### Robot Mode (minimal engine)
+### Robot Mode (async engine)
 
-Stripped-down 5-thread engine for robotics — no TUI, no MCP, just speech + vision + LLM:
+Event-driven async engine for robotics — no TUI, no MCP, just speech + vision + LLM with streaming TTS:
 
 ```bash
 uv run glados robot --config configs/robot_config.yaml
+# or
+python -m glados robot --config configs/robot_config.yaml
 ```
 
+Architecture:
+- **Async EventBus** — pub/sub in the main asyncio loop (speech, vision, tts, tts_eos events)
+- **AsyncBrain** — streams LLM tokens, emits TTS chunks mid-sentence (4-word threshold) for low latency
+- **Thread workers** — SpeechWorker, VisionWorker, SpeakerWorker run blocking I/O in daemon threads
+- **VoiceLoop** — async TTS synthesis task bridges text→audio via `asyncio.to_thread`
+- **Watchdog** — monitors worker threads, logs failures
+
 Features:
-- **Face recognition** via InsightFace (ONNX) — put photos in `faces/<name>/`
-- **OpenCV debug window** — live camera with face bounding boxes and scene descriptions
-- **5 threads** instead of 10 — SpeechWorker, VisionWorker, BrainWorker, VoiceWorker, SpeakerWorker
+- **Face recognition** via SCRFD + ArcFace (ONNX) with per-face profiles and descriptions
+- **3 OpenCV windows** — live camera feed, analyzed snapshots with face bboxes, VLM text panel (Cyrillic via PIL)
+- **Streaming TTS** — speech starts before the full sentence is generated
+- **Conversation trimming** — keeps last 10 turns to prevent context growth and TTFT degradation
+- **Per-run file logging** — `logs/YYYY-MM-DD_runNN.log` with DEBUG level
 
 #### Adding faces
 
 ```
 faces/
-  maxim/
+  creator/
     photo1.jpg
     photo2.jpg
   alice/
     photo1.jpg
 ```
 
-Photos are indexed at startup. GLaDOS will greet recognized people by name.
+Photos are indexed at startup. Configure face profiles in `robot_config.yaml`:
+
+```yaml
+face_names:
+  creator:
+    name: "Creator"
+    description: "Your creator. A young man with glasses. Treat him respectfully, but in your sarcastic style."
+  alice:
+    name: "Alice"
+    description: "A colleague. She likes cats."
+```
+
+The description is injected into LLM context when the face is recognized, so GLaDOS knows *who* she's talking to.
 
 #### Roadmap
 
-- **Phase 1** (current): Vision + FaceID + minimal engine
-- **Phase 2**: Motor control via ToolExecutor (GPIO, serial), obstacle sensors
-- **Phase 3**: Navigation (SLAM), path planning, autonomous movement
+- **Phase A** (done): Critical fixes — TTS playback, FaceID detection, sd.wait()
+- **Phase B** (done): Async architecture — EventBus, AsyncBrain, streaming TTS, Watchdog
+- **Phase C** (planned): PipelineMetrics, PulseAudio AEC, multiprocessing for CPU-bound tasks
+- **Phase D** (planned): Motor control via ToolExecutor (GPIO, serial), obstacle sensors
+- **Phase E** (planned): Navigation (SLAM), path planning, autonomous movement
 
 ## Configuration
 
@@ -238,6 +263,8 @@ Requires `tools_enabled: true` (default). Details: [docs/mcp.md](/docs/mcp.md)
 
 ## Architecture
 
+### TUI Mode (full agent)
+
 ```mermaid
 flowchart TB
     subgraph Input
@@ -279,6 +306,32 @@ flowchart TB
     llm <-->|MCP| tools[Tools]
 ```
 
+### Robot Mode (async engine)
+
+```mermaid
+flowchart LR
+    subgraph Threads
+        mic[Mic] --> vad[VAD] --> asr[ASR]
+        cam[Camera] --> vlm[VLM]
+        vlm --> face[FaceID]
+    end
+
+    subgraph "AsyncIO EventBus"
+        asr -->|speech event| brain[AsyncBrain]
+        vlm -->|vision event| brain
+        face -->|face profiles| ctx[ContextBuilder]
+        ctx --> brain
+        brain -->|tts event| chunk[ChunkSplitter]
+        chunk -->|stream| voice[VoiceLoop]
+    end
+
+    subgraph Playback
+        voice --> speaker[SpeakerWorker]
+    end
+
+    brain <-->|httpx stream| ollama[Ollama LLM]
+```
+
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | ASR (EN) | Parakeet TDT/CTC (ONNX) | English speech recognition |
@@ -318,7 +371,7 @@ Set `tools_enabled: false` for models like Gemma 3 that don't support function c
 Make sure dependencies are installed: `uv pip install -e ".[cpu,ru,tui]"`
 
 **Logs:**
-All logs are written to `glados.log` in the project root.
+Robot mode writes per-run logs to `logs/YYYY-MM-DD_runNN.log` (DEBUG level). TUI mode logs to stderr.
 
 **Windows DLL error:**
 Install [Visual C++ Redistributable](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist).
