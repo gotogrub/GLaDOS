@@ -438,6 +438,26 @@ def main() -> int:
                 theme=args.theme,
             )
         elif args.command == "robot":
+            import sys
+            from datetime import datetime
+            from pathlib import Path
+
+            from loguru import logger as _logger
+
+            # Logging: stderr (INFO) + file (DEBUG, rotated by date+run)
+            _logger.remove()
+            _logger.add(sys.stderr, level="INFO")
+
+            log_dir = Path("logs")
+            log_dir.mkdir(exist_ok=True)
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            # Find next run number for today
+            existing = sorted(log_dir.glob(f"{date_str}_run*.log"))
+            run_num = len(existing) + 1
+            log_path = log_dir / f"{date_str}_run{run_num:02d}.log"
+            _logger.add(str(log_path), level="DEBUG", encoding="utf-8")
+            _logger.info("Log file: {}", log_path)
+
             from glados.robot.config import RobotConfig
             from glados.robot.engine_async import AsyncRobotEngine
             config = RobotConfig.from_yaml(args.config)

@@ -172,6 +172,9 @@ data/knowledge.json
 # Local scratch space
 tmp/
 
+# Runtime logs
+logs/
+
 # macOS
 .DS_Store
 

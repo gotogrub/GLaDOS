@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import queue
+import textwrap
 import threading
 import time
 from dataclasses import dataclass
@@ -18,6 +19,14 @@ from ..vision.vision_state import VisionState
 from .config import VisionSettings
 from .face_id import FaceRecognizer
 
+# Optional Pillow for Cyrillic text rendering
+try:
+    from PIL import Image, ImageDraw, ImageFont
+
+    _PIL_AVAILABLE = True
+except ImportError:
+    _PIL_AVAILABLE = False
+
 
 @dataclass
 class VisionEvent:
@@ -31,6 +40,12 @@ class VisionWorker:
     """Camera → VLM description + face recognition → VisionState + events + OpenCV display."""
 
     VISION_PROMPT = "Describe the image briefly, focusing on salient elements."
+
+    # Text panel settings
+    _TEXT_PANEL_W = 480
+    _TEXT_PANEL_H = 200
+    _FONT_SIZE = 16
+    _FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
     def __init__(
         self,
@@ -53,29 +68,43 @@ class VisionWorker:
         self._capture: cv2.VideoCapture | None = None
         self._last_frame: NDArray[np.uint8] | None = None
         self._last_desc: str | None = None
+        self._pil_font: ImageFont.FreeTypeFont | None = None
+
+        if self._show and _PIL_AVAILABLE:
+            try:
+                self._pil_font = ImageFont.truetype(self._FONT_PATH, self._FONT_SIZE)
+            except (OSError, IOError):
+                logger.warning("Font {} not found, text panel disabled", self._FONT_PATH)
 
     def run(self) -> None:
         logger.info("VisionWorker started.")
+        last_analysis = 0.0
         try:
             while not self._shutdown.is_set():
-                t0 = time.perf_counter()
-
                 if not self._ensure_camera():
-                    self._sleep(t0)
+                    self._shutdown.wait(timeout=1.0)
                     continue
 
                 frame = self._grab()
                 if frame is None:
-                    self._sleep(t0)
+                    self._shutdown.wait(timeout=0.01)
                     continue
+
+                # Live preview — every frame, no delay
+                if self._show:
+                    cv2.imshow("GLaDOS Camera", frame)
+                    cv2.waitKey(1)
+
+                # Analysis — only at configured interval
+                now = time.perf_counter()
+                if now - last_analysis < self._settings.capture_interval_seconds:
+                    continue
+                last_analysis = now
 
                 processed = self._resize(frame)
                 change = self._scene_change(processed)
 
                 if self._last_frame is not None and change <= self._settings.scene_change_threshold:
-                    if self._show:
-                        self._display(frame, self._last_desc or "", [])
-                    self._sleep(t0)
                     continue
 
                 self._last_frame = processed.copy()
@@ -93,8 +122,8 @@ class VisionWorker:
                         logger.error("VLM failed: {}", e)
 
                 # Face recognition
-                face_results = []
-                face_names = []
+                face_results: list[dict] = []
+                face_names: list[str] = []
                 if self._face:
                     try:
                         face_results = self._face.recognize(frame)
@@ -103,7 +132,7 @@ class VisionWorker:
                         logger.error("FaceID failed: {}", e)
 
                 # Build combined vision text
-                parts = []
+                parts: list[str] = []
                 if desc:
                     parts.append(desc)
                 if face_names:
@@ -127,13 +156,13 @@ class VisionWorker:
                     except queue.Full:
                         pass
 
+                # Show snapshot with face bboxes + text panel
                 if self._show:
-                    self._display(frame, vision_text, face_results)
+                    self._show_snapshot(frame, face_results)
+                    self._show_text_panel(vision_text)
 
                 if self._settings.save_frames:
                     self._save(frame, vision_text)
-
-                self._sleep(t0)
 
         except Exception as e:
             logger.exception("VisionWorker crash: {}", e)
@@ -178,7 +207,8 @@ class VisionWorker:
         diff = cv2.absdiff(frame, self._last_frame)
         return float(np.mean(diff)) / 255.0
 
-    def _display(self, frame: NDArray[np.uint8], text: str, faces: list[dict]) -> None:
+    def _show_snapshot(self, frame: NDArray[np.uint8], faces: list[dict]) -> None:
+        """Show analyzed frame with face bounding boxes."""
         display = frame.copy()
         for face in faces:
             x1, y1, x2, y2 = face["bbox"]
@@ -186,14 +216,30 @@ class VisionWorker:
             sim = face.get("similarity", 0)
             color = (0, 255, 0) if name != "unknown" else (0, 0, 255)
             cv2.rectangle(display, (x1, y1), (x2, y2), color, 2)
-            label = f"{name} ({sim:.2f})" if name != "unknown" else "unknown"
+            # ASCII-safe label for cv2.putText (names are folder names, ASCII)
+            label = f"{name} ({sim:.2f})" if name != "unknown" else "?"
             cv2.putText(display, label, (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-        if text:
-            h = display.shape[0]
-            cv2.putText(display, text[:80], (10, h - 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        cv2.imshow("GLaDOS Vision", display)
+        cv2.imshow("GLaDOS Snapshot", display)
+        cv2.waitKey(1)
+
+    def _show_text_panel(self, text: str) -> None:
+        """Render VLM description as a text panel using PIL for Cyrillic support."""
+        if not text:
+            return
+        if not _PIL_AVAILABLE or not self._pil_font:
+            return
+
+        img = Image.new("RGB", (self._TEXT_PANEL_W, self._TEXT_PANEL_H), (30, 30, 30))
+        draw = ImageDraw.Draw(img)
+
+        # Word-wrap text to fit panel width
+        wrapped = textwrap.fill(text, width=50)
+        draw.text((10, 10), wrapped, fill=(200, 255, 200), font=self._pil_font)
+
+        panel = np.array(img)
+        panel = cv2.cvtColor(panel, cv2.COLOR_RGB2BGR)
+        cv2.imshow("GLaDOS VLM", panel)
         cv2.waitKey(1)
 
     def _save(self, frame: NDArray[np.uint8], desc: str) -> None:
@@ -212,8 +258,3 @@ class VisionWorker:
         except Exception as e:
             logger.warning("Frame save failed: {}", e)
 
-    def _sleep(self, started: float) -> None:
-        elapsed = time.perf_counter() - started
-        remaining = max(0, self._settings.capture_interval_seconds - elapsed)
-        if remaining:
-            self._shutdown.wait(timeout=remaining)

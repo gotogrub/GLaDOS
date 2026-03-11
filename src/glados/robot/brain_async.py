@@ -14,6 +14,9 @@ from .text_pipeline import ChunkSplitter, ThinkFilter
 class AsyncBrain:
     """Processes speech/vision events through LLM and emits TTS sentences."""
 
+    # Keep last N user/assistant message pairs (not counting system messages).
+    MAX_CONVERSATION_TURNS: int = 10
+
     def __init__(
         self,
         event_bus: EventBus,
@@ -40,14 +43,33 @@ class AsyncBrain:
         await self._generate(autonomy=False)
 
     async def handle_vision(self, event: Event) -> None:
-        """Process vision event (autonomy)."""
+        """Process vision event (autonomy).
+
+        Vision description is already available in VisionState (injected as
+        system context by ContextBuilder).  We only add a short trigger as the
+        "user" message so the model knows it should comment on what it sees.
+        """
         desc = event.data.get("description", "")
         if not desc:
             return
-        self._conv.append({"role": "user", "content": desc})
+        # Don't duplicate the full vision text as a user message —
+        # ContextBuilder already injects it as [vision] system context.
+        self._conv.append({"role": "user", "content": "[наблюдение]"})
         await self._generate(autonomy=True)
 
+    def _trim_conversation(self) -> None:
+        """Keep system messages + last N turns to prevent context growth."""
+        msgs = self._conv.snapshot()
+        system = [m for m in msgs if m.get("role") == "system"]
+        non_system = [m for m in msgs if m.get("role") != "system"]
+        max_msgs = self.MAX_CONVERSATION_TURNS * 2  # user + assistant per turn
+        if len(non_system) > max_msgs:
+            trimmed = system + non_system[-max_msgs:]
+            self._conv.replace_all(trimmed)
+            logger.info("Trimmed conversation: {} → {} messages", len(msgs), len(trimmed))
+
     async def _generate(self, autonomy: bool) -> None:
+        self._trim_conversation()
         vision_desc = self._vision.snapshot() if self._vision else None
         messages = self._ctx.build(
             messages=self._conv.snapshot(),
@@ -59,6 +81,7 @@ class AsyncBrain:
         splitter = ChunkSplitter(min_words=4)
         full_response: list[str] = []
 
+        chunks_emitted = 0
         try:
             async for token in self._llm.stream(messages):
                 speakable = think_filter.feed(token)
@@ -67,6 +90,8 @@ class AsyncBrain:
                 full_response.append(speakable)
                 sentence = splitter.feed(speakable)
                 if sentence:
+                    chunks_emitted += 1
+                    logger.info("Brain → TTS chunk {}: '{}'", chunks_emitted, sentence[:80])
                     await self._bus.publish(
                         Event(type="tts", data={"text": sentence}, priority=5)
                     )
@@ -76,6 +101,8 @@ class AsyncBrain:
         # Flush remaining text
         remaining = splitter.flush()
         if remaining:
+            chunks_emitted += 1
+            logger.info("Brain → TTS flush {}: '{}'", chunks_emitted, remaining[:80])
             await self._bus.publish(
                 Event(type="tts", data={"text": remaining}, priority=5)
             )
@@ -86,4 +113,6 @@ class AsyncBrain:
         full_text = "".join(full_response).strip()
         if full_text:
             self._conv.append({"role": "assistant", "content": full_text})
-            logger.success("LLM: {}", full_text[:120])
+            logger.success("LLM ({} chunks): {}", chunks_emitted, full_text[:120])
+        else:
+            logger.warning("LLM returned empty response")

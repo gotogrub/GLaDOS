@@ -83,7 +83,7 @@ class AsyncRobotEngine:
 
         # Context builder
         ctx = ContextBuilder(
-            face_names=self._config.face_names,
+            face_profiles=self._config.get_face_profiles(),
             knowledge_store=knowledge,
             autonomy_prompt=self._config.autonomy.tick_prompt,
         )
@@ -267,6 +267,7 @@ class AsyncRobotEngine:
                 continue
             text = item.get("content", "")
             if text:
+                logger.info("SpeechBridge → EventBus: '{}'", text[:80])
                 await self._bus.publish(
                     Event(type="speech", data={"text": text}, priority=10)
                 )
@@ -295,27 +296,32 @@ class AsyncRobotEngine:
         """Handle TTS event — put text into TTS synthesis queue."""
         text = event.data.get("text", "")
         if text:
+            logger.info("TTS queue ← '{}'", text[:80])
             self._tts_q.put(text)
 
     async def _on_tts_eos(self, event: Event) -> None:
         """Handle TTS end-of-stream."""
+        logger.info("TTS queue ← <EOS>")
         self._tts_q.put("<EOS>")
 
     async def _voice_loop(self, tts_model: Any, stc_converter: Any) -> None:
         """Async TTS synthesis loop — reads from _tts_q, synthesizes, puts into _audio_q."""
         import time
 
+        import numpy as np
+
         logger.info("VoiceLoop (async) started.")
         while not self._shutdown.is_set():
             try:
-                text = await asyncio.to_thread(self._tts_q.get, timeout=0.05)
+                text = await asyncio.to_thread(self._tts_q.get, timeout=0.1)
             except Exception:
                 continue
 
             if text == "<EOS>":
+                logger.info("VoiceLoop: EOS → audio queue")
                 self._audio_q.put(
                     AudioChunk(
-                        audio=__import__("numpy").array([], dtype="float32"),
+                        audio=np.array([], dtype="float32"),
                         text="",
                         is_eos=True,
                     )
@@ -326,12 +332,19 @@ class AsyncRobotEngine:
                 continue
 
             spoken = stc_converter.text_to_spoken(text)
+            logger.info("VoiceLoop: synthesizing '{}'", spoken[:60])
             t0 = time.perf_counter()
-            audio = await asyncio.to_thread(tts_model.generate_speech_audio, spoken)
+            try:
+                audio = await asyncio.to_thread(tts_model.generate_speech_audio, spoken)
+            except Exception as e:
+                logger.error("VoiceLoop: TTS synthesis FAILED: {}", e)
+                continue
             dt = time.perf_counter() - t0
-            logger.debug("TTS: {:.2f}s for '{}'", dt, spoken[:60])
-
-            import numpy as np
+            logger.info(
+                "VoiceLoop: {:.2f}s, {} samples → audio queue",
+                dt,
+                audio.size if hasattr(audio, "size") else len(audio),
+            )
 
             self._audio_q.put(AudioChunk(audio=audio, text=spoken))
 

@@ -98,7 +98,7 @@ class SpeakerWorker:
                 continue
 
             if chunk.is_eos:
-                logger.debug("Speaker: EOS received")
+                logger.info("Speaker: EOS received")
                 self._speaking.clear()
                 self._processing.clear()
                 continue
@@ -106,7 +106,7 @@ class SpeakerWorker:
             if chunk.audio.size == 0:
                 continue
 
-            logger.debug("Speaker: playing {} samples @ {}Hz", chunk.audio.size, self._sr)
+            logger.info("Speaker: playing {} samples @ {}Hz for '{}'", chunk.audio.size, self._sr, chunk.text[:60])
             self._speaking.set()
 
             try:
@@ -123,6 +123,6 @@ class SpeakerWorker:
                 logger.warning("Speaker: sd.wait() error: {}", e)
 
             self._audio.stop_speaking()
-            logger.debug("Speaker: chunk done")
+            logger.info("Speaker: chunk done")
 
         logger.info("SpeakerWorker stopped.")

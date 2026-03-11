@@ -23,6 +23,12 @@ class AutonomySettings(BaseModel):
     tick_prompt: str = "Сцена: {scene}\nЛица: {faces}"
 
 
+class FaceProfile(BaseModel):
+    """Profile for a known face."""
+    name: str
+    description: str = ""
+
+
 class RobotConfig(BaseModel):
     llm_model: str
     completion_url: HttpUrl
@@ -33,13 +39,25 @@ class RobotConfig(BaseModel):
     personality: str = "Ты — ГЛаДОС из Portal. Саркастичный ИИ. Отвечай кратко, на русском."
     knowledge_path: str | None = "data/knowledge.json"
     face_db: str = "faces/"
-    face_names: dict[str, str] | None = None
+    face_names: dict[str, str | FaceProfile] | None = None
     vision: VisionSettings = VisionSettings()
     autonomy: AutonomySettings = AutonomySettings()
     interruptible: bool = True
     interrupt_keywords: list[str] | None = None
     tools_enabled: bool = False
     announcement: str | None = None
+
+    def get_face_profiles(self) -> dict[str, FaceProfile]:
+        """Normalize face_names to FaceProfile dict."""
+        if not self.face_names:
+            return {}
+        result: dict[str, FaceProfile] = {}
+        for folder, val in self.face_names.items():
+            if isinstance(val, str):
+                result[folder] = FaceProfile(name=val)
+            else:
+                result[folder] = val
+        return result
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> RobotConfig:
