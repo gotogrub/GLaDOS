@@ -19,6 +19,7 @@ from .config import RobotConfig
 from .speech import SpeechWorker
 from .vision import VisionWorker
 from .voice import SpeakerWorker, VoiceWorker
+from .watchdog import Watchdog
 
 
 class RobotEngine:
@@ -163,6 +164,23 @@ class RobotEngine:
             t.start()
             self._threads.append(t)
             logger.success("{} started.", name)
+
+        # Watchdog
+        thread_map = {t.name: t for t in self._threads}
+
+        def _on_thread_failure(name: str, error: str) -> None:
+            logger.critical("CRITICAL: Worker {} died! {}", name, error)
+
+        self._watchdog = Watchdog(
+            threads=thread_map,
+            on_failure=_on_thread_failure,
+            check_interval=2.0,
+            shutdown_event=self._shutdown,
+        )
+        wd_thread = threading.Thread(
+            target=self._watchdog.run, name="Watchdog", daemon=True
+        )
+        wd_thread.start()
 
         # Play announcement
         if self._config.announcement:
