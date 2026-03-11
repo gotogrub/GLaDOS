@@ -127,8 +127,9 @@ The description is injected into LLM context when the face is recognized, so GLa
 - **Phase A** (done): Critical fixes — TTS playback, FaceID detection, sd.wait()
 - **Phase B** (done): Async architecture — EventBus, AsyncBrain, streaming TTS, Watchdog
 - **Phase C** (planned): PipelineMetrics, PulseAudio AEC, multiprocessing for CPU-bound tasks
-- **Phase D** (planned): Motor control via ToolExecutor (GPIO, serial), obstacle sensors
-- **Phase E** (planned): Navigation (SLAM), path planning, autonomous movement
+- **Phase D** (planned): Emotion face display — LLM emotion tags → fullscreen images on a monitor (GLaDOS "face")
+- **Phase E** (planned): Motor control via ToolExecutor (GPIO, serial), obstacle sensors
+- **Phase F** (planned): Navigation (SLAM), path planning, autonomous movement
 
 ## Configuration
 

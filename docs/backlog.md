@@ -94,8 +94,24 @@
 - Race condition в start_speaking → sd.stop() вместо self.stop_speaking()
 - Нет watchdog → добавлен Watchdog для мониторинга потоков
 
-### Phase C (TODO)
+### Phase C (TODO) — Метрики и оптимизация
 - PipelineMetrics для замера latency на каждом этапе
 - PulseAudio AEC (echo cancellation)
 - Multiprocessing для CPU-bound задач (VLM, FaceID)
 - Обрезка/компактификация контекста (баг #10)
+
+### Phase D (TODO) — Эмоциональное лицо на мониторе
+Продовый режим: мини-ПК + вебка + монитор как "лицо" GLaDOS.
+
+- **EmotionParser** — LLM ставит тег эмоции в начале ответа (`[SARCASM]`, `[ANGER]`, `[CURIOSITY]`, `[NEUTRAL]`, `[DISGUST]`, `[AMUSEMENT]`). Парсер вырезает тег, передаёт эмоцию в FaceDisplay, чистый текст — в TTS.
+- **FaceDisplay** — fullscreen окно на заданном мониторе (настраивается в конфиге: `face_display.monitor`). Показывает картинку по текущей эмоции. Idle-анимация (моргание/покачивание) когда GLaDOS молчит.
+- **Ассеты** — `assets/faces/{emotion}.png` (или анимированные spritesheet/gif). Стилистика: глаз GLaDOS / минималистичные выражения.
+- **Конфиг** — `face_display: { enabled: true, monitor: 1, default_emotion: "neutral", assets_dir: "assets/faces" }`
+- **Интеграция** — подписка на `tts` события в EventBus, эмоция меняется при каждом новом ответе LLM.
+
+### Phase E (TODO) — Управление моторами
+- Motor control через ToolExecutor (GPIO, serial)
+- Датчики препятствий
+
+### Phase F (TODO) — Навигация
+- SLAM, планирование маршрута, автономное движение
