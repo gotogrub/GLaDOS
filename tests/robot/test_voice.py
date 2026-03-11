@@ -1,13 +1,16 @@
 import queue
 import threading
 import time
+from unittest.mock import MagicMock
+
 import numpy as np
+
+from glados.robot.voice import AudioChunk, SpeakerWorker, VoiceWorker
+from glados.core.conversation_store import ConversationStore
 
 
 def test_voice_worker_synthesizes(mocker):
     """VoiceWorker reads TTS queue and puts audio into audio queue."""
-    from glados.robot.voice import VoiceWorker
-
     tts_q = queue.Queue()
     audio_q = queue.Queue()
     shutdown = threading.Event()
@@ -30,7 +33,6 @@ def test_voice_worker_synthesizes(mocker):
         shutdown_event=shutdown,
     )
 
-    # Run in a thread, let it process, then shutdown
     t = threading.Thread(target=worker.run, daemon=True)
     t.start()
     time.sleep(0.3)
@@ -38,3 +40,41 @@ def test_voice_worker_synthesizes(mocker):
     t.join(timeout=2)
 
     assert audio_q.qsize() >= 1
+
+
+def test_speaker_worker_plays_and_clears_flag():
+    """SpeakerWorker should play audio and clear speaking flag on EOS."""
+    audio_q = queue.Queue()
+    speaking = threading.Event()
+    processing = threading.Event()
+    shutdown = threading.Event()
+    conv = ConversationStore()
+
+    mock_audio = MagicMock()
+    sr = 22050
+
+    worker = SpeakerWorker(
+        audio_io=mock_audio,
+        audio_queue=audio_q,
+        conversation_store=conv,
+        sample_rate=sr,
+        shutdown_event=shutdown,
+        speaking_event=speaking,
+        processing_event=processing,
+    )
+
+    # Put audio chunk + EOS
+    chunk = AudioChunk(audio=np.ones(1000, dtype=np.float32), text="test")
+    eos = AudioChunk(audio=np.array([], dtype=np.float32), text="", is_eos=True)
+    audio_q.put(chunk)
+    audio_q.put(eos)
+
+    t = threading.Thread(target=worker.run, daemon=True)
+    t.start()
+    time.sleep(0.5)
+    shutdown.set()
+    t.join(timeout=2.0)
+
+    mock_audio.start_speaking.assert_called_once()
+    mock_audio.stop_speaking.assert_called()
+    assert not speaking.is_set()

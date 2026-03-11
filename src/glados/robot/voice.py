@@ -98,6 +98,7 @@ class SpeakerWorker:
                 continue
 
             if chunk.is_eos:
+                logger.debug("Speaker: EOS received")
                 self._speaking.clear()
                 self._processing.clear()
                 continue
@@ -105,18 +106,23 @@ class SpeakerWorker:
             if chunk.audio.size == 0:
                 continue
 
+            logger.debug("Speaker: playing {} samples @ {}Hz", chunk.audio.size, self._sr)
             self._speaking.set()
-            self._audio.start_speaking(chunk.audio, self._sr, chunk.text)
 
-            # Wait for playback to finish (sd.play is non-blocking,
-            # _is_playing never resets on its own)
-            duration = chunk.audio.size / self._sr
-            deadline = time.monotonic() + duration + 0.5
-            while time.monotonic() < deadline and not self._shutdown.is_set():
-                stream = sd.get_stream()
-                if stream is None or not stream.active:
-                    break
-                time.sleep(0.02)
+            try:
+                self._audio.start_speaking(chunk.audio, self._sr, chunk.text)
+            except Exception as e:
+                logger.error("Speaker: start_speaking FAILED: {}", e)
+                self._speaking.clear()
+                continue
+
+            # sd.play() is non-blocking — sd.wait() blocks until done
+            try:
+                sd.wait()
+            except Exception as e:
+                logger.warning("Speaker: sd.wait() error: {}", e)
+
             self._audio.stop_speaking()
+            logger.debug("Speaker: chunk done")
 
         logger.info("SpeakerWorker stopped.")

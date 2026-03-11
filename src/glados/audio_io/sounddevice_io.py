@@ -135,14 +135,12 @@ class SoundDeviceAudioIO:
         if sample_rate is None:
             sample_rate = self.SAMPLE_RATE
 
-        # Stop any existing playback
-        self.stop_speaking()
+        # Stop any existing playback without touching _stop_event
+        sd.stop()
 
-        # Reset the stop event
         self._stop_event.clear()
-
-        logger.debug(f"Playing audio with sample rate: {sample_rate} Hz, length: {len(audio_data)} samples")
         self._is_playing = True
+        logger.debug(f"Playing audio: {len(audio_data)} samples @ {sample_rate}Hz")
         sd.play(audio_data, sample_rate)
 
     def measure_percentage_spoken(self, total_samples: int, sample_rate: int | None = None) -> tuple[bool, int]:
