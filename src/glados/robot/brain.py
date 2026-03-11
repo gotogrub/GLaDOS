@@ -118,6 +118,8 @@ class BrainWorker:
         full_response: list[str] = []
         in_thinking = False
         thinking_buf: list[str] = []
+        t0 = time.perf_counter()
+        ttft_logged = False
 
         try:
             with requests.post(
@@ -138,6 +140,10 @@ class BrainWorker:
                         continue
                     if chunk == "":
                         break
+
+                    if not ttft_logged:
+                        logger.info("LLM TTFT: {:.2f}s", time.perf_counter() - t0)
+                        ttft_logged = True
 
                     speakable, in_thinking = self._filter_thinking(
                         chunk, in_thinking, thinking_buf

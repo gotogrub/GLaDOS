@@ -1,5 +1,5 @@
 Robot:
-  llm_model: "qwen2.5:7b"
+  llm_model: "qwen2.5:3b"
   completion_url: "http://localhost:11434/api/chat"
   api_key: null
   tools_enabled: false
@@ -14,8 +14,8 @@ Robot:
   face_names:
     creator: "твой создатель"
   llm_options:
-    num_ctx: 4096
-    num_thread: 8
+    num_ctx: 2048
+    num_thread: 6
   vision:
     camera_index: 0
     capture_interval_seconds: 3
