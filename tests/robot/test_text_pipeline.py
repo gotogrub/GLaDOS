@@ -1,4 +1,4 @@
-from glados.robot.text_pipeline import ThinkFilter, SentenceSplitter
+from glados.robot.text_pipeline import ChunkSplitter, ThinkFilter, SentenceSplitter
 
 
 def test_think_filter_strips_tags():
@@ -52,3 +52,48 @@ def test_sentence_splitter_flush_partial():
 def test_sentence_splitter_empty_flush():
     s = SentenceSplitter()
     assert s.flush() == ""
+
+
+# --- ChunkSplitter ---
+
+
+def test_chunk_splitter_emits_on_word_threshold():
+    s = ChunkSplitter(min_words=3)
+    results = []
+    for token in ["Роботы", " —", " это", " прекрасные", " существа", "."]:
+        chunk = s.feed(token)
+        if chunk:
+            results.append(chunk)
+    remaining = s.flush()
+    if remaining:
+        results.append(remaining)
+    # Should emit at least one chunk before the end
+    combined = "".join(results)
+    assert "Роботы — это прекрасные существа." == combined
+
+
+def test_chunk_splitter_sentence_boundary_resets():
+    s = ChunkSplitter(min_words=3)
+    results = []
+    for token in ["Да", ".", " Нет", "."]:
+        chunk = s.feed(token)
+        if chunk:
+            results.append(chunk)
+    remaining = s.flush()
+    if remaining:
+        results.append(remaining)
+    assert results == ["Да.", "Нет."]
+
+
+def test_chunk_splitter_flush_partial():
+    s = ChunkSplitter(min_words=5)
+    assert s.feed("One") is None
+    assert s.feed(" two") is None
+    assert s.flush() == "One two"
+
+
+def test_chunk_splitter_immediate_sentence():
+    """Short sentence with punctuation should emit immediately."""
+    s = ChunkSplitter(min_words=3)
+    result = s.feed("Да.")
+    assert result == "Да."

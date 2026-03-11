@@ -8,7 +8,7 @@ from ..vision.vision_state import VisionState
 from .context import ContextBuilder
 from .event_bus import Event, EventBus
 from .llm_client import OllamaClient
-from .text_pipeline import SentenceSplitter, ThinkFilter
+from .text_pipeline import ChunkSplitter, ThinkFilter
 
 
 class AsyncBrain:
@@ -56,7 +56,7 @@ class AsyncBrain:
         )
 
         think_filter = ThinkFilter()
-        splitter = SentenceSplitter()
+        splitter = ChunkSplitter(min_words=4)
         full_response: list[str] = []
 
         try:

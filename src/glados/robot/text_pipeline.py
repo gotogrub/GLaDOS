@@ -47,6 +47,48 @@ class ThinkFilter:
         self._buf.clear()
 
 
+class ChunkSplitter:
+    """Splits LLM output into TTS-friendly chunks.
+
+    Emits a chunk when:
+    - Sentence boundary is hit (punctuation), OR
+    - Word count reaches min_words threshold
+    This enables streaming TTS — synthesis starts before the full sentence is done.
+    """
+
+    ENDINGS = frozenset({".", "!", "?", ":", ";", "?!", "\n"})
+
+    def __init__(self, min_words: int = 4) -> None:
+        self._min_words = min_words
+        self._buffer: list[str] = []
+
+    def feed(self, token: str) -> str | None:
+        """Feed a token. Returns chunk if ready, else None."""
+        self._buffer.append(token)
+        combined = "".join(self._buffer)
+
+        # Always emit on sentence boundary
+        if any(combined.rstrip().endswith(p) for p in self.ENDINGS):
+            self._buffer.clear()
+            stripped = combined.strip()
+            return stripped if stripped else None
+
+        # Emit when word threshold reached (at a word boundary)
+        word_count = len(combined.split())
+        if word_count >= self._min_words and token.endswith(" "):
+            self._buffer.clear()
+            stripped = combined.strip()
+            return stripped if stripped else None
+
+        return None
+
+    def flush(self) -> str:
+        """Flush remaining buffer."""
+        text = "".join(self._buffer).strip()
+        self._buffer.clear()
+        return text
+
+
 class SentenceSplitter:
     """Accumulates tokens and splits on sentence-ending punctuation."""
 
