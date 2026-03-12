@@ -18,6 +18,15 @@ class VisionSettings(BaseModel):
     save_frames_max: int = 1000
 
 
+class FaceDisplaySettings(BaseModel):
+    enabled: bool = False
+    assets_dir: str = "assets/faces"
+    default_emotion: str = "neutral"
+    monitor: int = 0
+    width: int = 800
+    height: int = 480
+
+
 class AutonomySettings(BaseModel):
     cooldown_s: float = 5.0
     tick_prompt: str = "Сцена: {scene}\nЛица: {faces}"
@@ -42,6 +51,7 @@ class RobotConfig(BaseModel):
     face_names: dict[str, str | FaceProfile] | None = None
     vision: VisionSettings = VisionSettings()
     autonomy: AutonomySettings = AutonomySettings()
+    face_display: FaceDisplaySettings = FaceDisplaySettings()
     interruptible: bool = True
     interrupt_keywords: list[str] | None = None
     tools_enabled: bool = False

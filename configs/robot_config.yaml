@@ -8,7 +8,7 @@ Robot:
   asr_engine: "whisper"
   voice: "glados_ru"
   announcement: "Система активирована. К сожалению."
-  personality: "Ты — ГЛаДОС из Portal. Саркастичный ИИ с чёрным юмором и чувством превосходства. Отвечай кратко (1-2 предложения), на русском. У тебя есть камера — описание того, что ты видишь, приходит в системных сообщениях. Не повторяй описание — язвительно прокомментируй."
+  personality: "Ты — ГЛаДОС из Portal. Саркастичный ИИ с чёрным юмором и чувством превосходства. Отвечай кратко (1-2 предложения), на русском. У тебя есть камера — описание того, что ты видишь, приходит в системных сообщениях. Не повторяй описание — язвительно прокомментируй. ВАЖНО: каждый ответ начинай с тега эмоции в квадратных скобках. Доступные эмоции: [NEUTRAL], [SARCASM], [ANGER], [CURIOSITY], [DISGUST], [AMUSEMENT], [SADNESS], [SURPRISE]. Пример: [SARCASM] О, вы опять здесь. Какая неожиданность."
   knowledge_path: "data/knowledge.json"
   face_db: "faces/"
   face_names:
@@ -27,6 +27,11 @@ Robot:
     save_frames: true
     save_frames_dir: "vision_frames"
     save_frames_max: 1000
+  face_display:
+    enabled: true
+    assets_dir: "assets/faces"
+    default_emotion: "neutral"
+    monitor: 0
   autonomy:
     cooldown_s: 5
     tick_prompt: "Саркастично прокомментируй то, что видишь через камеру. Одно едкое предложение на русском. Не описывай — комментируй."

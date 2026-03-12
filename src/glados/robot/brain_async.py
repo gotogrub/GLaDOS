@@ -8,7 +8,7 @@ from ..vision.vision_state import VisionState
 from .context import ContextBuilder
 from .event_bus import Event, EventBus
 from .llm_client import OllamaClient
-from .text_pipeline import ChunkSplitter, ThinkFilter
+from .text_pipeline import ChunkSplitter, EmotionParser, ThinkFilter
 
 
 class AsyncBrain:
@@ -78,6 +78,7 @@ class AsyncBrain:
         )
 
         think_filter = ThinkFilter()
+        emotion_parser = EmotionParser()
         splitter = ChunkSplitter(min_words=4)
         full_response: list[str] = []
 
@@ -87,8 +88,12 @@ class AsyncBrain:
                 speakable = think_filter.feed(token)
                 if not speakable:
                     continue
-                full_response.append(speakable)
-                sentence = splitter.feed(speakable)
+                # Strip emotion tag, pass clean text downstream
+                clean = emotion_parser.feed(speakable)
+                if not clean:
+                    continue
+                full_response.append(clean)
+                sentence = splitter.feed(clean)
                 if sentence:
                     chunks_emitted += 1
                     logger.info("Brain → TTS chunk {}: '{}'", chunks_emitted, sentence[:80])
@@ -97,6 +102,23 @@ class AsyncBrain:
                     )
         except Exception as e:
             logger.error("AsyncBrain LLM error: {}", e)
+
+        # Flush emotion parser buffer (short responses may not trigger detection)
+        leftover = emotion_parser.flush()
+        if leftover:
+            full_response.append(leftover)
+            chunk = splitter.feed(leftover)
+            if chunk:
+                chunks_emitted += 1
+                logger.info("Brain → TTS chunk {}: '{}'", chunks_emitted, chunk[:80])
+                await self._bus.publish(
+                    Event(type="tts", data={"text": chunk}, priority=5)
+                )
+
+        # Publish detected emotion
+        await self._bus.publish(
+            Event(type="emotion", data={"emotion": emotion_parser.emotion}, priority=5)
+        )
 
         # Flush remaining text
         remaining = splitter.flush()

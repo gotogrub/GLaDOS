@@ -1,5 +1,7 @@
-"""Think tag filter and sentence splitter for LLM output streaming."""
+"""Think tag filter, emotion parser, and sentence splitter for LLM output streaming."""
 from __future__ import annotations
+
+import re
 
 from loguru import logger
 
@@ -45,6 +47,75 @@ class ThinkFilter:
     def reset(self) -> None:
         self._in_thinking = False
         self._buf.clear()
+
+
+class EmotionParser:
+    """Extracts emotion tag from the start of LLM output.
+
+    LLM is prompted to prefix responses with [EMOTION] tags like [SARCASM],
+    [ANGER], etc.  The parser buffers initial tokens until it finds the tag
+    (or gives up), strips it, and exposes the detected emotion.
+
+    Usage in streaming pipeline (sits between ThinkFilter and ChunkSplitter):
+        parser = EmotionParser()
+        for token in stream:
+            text = parser.feed(token)
+            if text:
+                # pass to ChunkSplitter
+        emotion = parser.emotion   # "sarcasm", "neutral", etc.
+    """
+
+    EMOTIONS = frozenset({
+        "NEUTRAL", "SARCASM", "ANGER", "CURIOSITY",
+        "DISGUST", "AMUSEMENT", "SADNESS", "SURPRISE",
+    })
+    _TAG_RE = re.compile(r"\s*\[([A-Z_]+)\]\s*")
+    _MAX_BUFFER = 40  # give up after this many chars
+
+    def __init__(self) -> None:
+        self._detected = False
+        self._buffer: list[str] = []
+        self.emotion: str = "neutral"
+
+    def feed(self, token: str) -> str:
+        """Feed a token. Returns text to pass downstream (may be empty while buffering)."""
+        if self._detected:
+            return token
+
+        self._buffer.append(token)
+        combined = "".join(self._buffer)
+
+        m = self._TAG_RE.match(combined)
+        if m:
+            if m.group(1) in self.EMOTIONS:
+                self.emotion = m.group(1).lower()
+                self._detected = True
+                logger.info("Emotion detected: [{}]", self.emotion.upper())
+                return combined[m.end():]
+            # Tag found but not a valid emotion — give up
+            self._detected = True
+            return combined
+
+        # Give up if too much text or we already passed a `]`
+        if len(combined) > self._MAX_BUFFER or "]" in combined:
+            self._detected = True
+            return combined
+
+        return ""  # keep buffering
+
+    def flush(self) -> str:
+        """Flush buffered text (call at end of stream)."""
+        if self._detected:
+            return ""
+        self._detected = True
+        combined = "".join(self._buffer)
+        self._buffer.clear()
+        return combined
+
+    def reset(self) -> None:
+        self._detected = False
+        self._buffer.clear()
+        self.emotion = "neutral"
 
 
 class ChunkSplitter:

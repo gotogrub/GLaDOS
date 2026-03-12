@@ -6,6 +6,8 @@ import queue
 import threading
 from typing import Any
 
+import cv2
+
 from loguru import logger
 
 from ..ASR import get_audio_transcriber
@@ -24,6 +26,7 @@ from .llm_client import OllamaClient
 from .speech import SpeechWorker
 from .vision import VisionWorker
 from .voice import AudioChunk, SpeakerWorker, VoiceWorker
+from .face_display import FaceDisplay
 from .watchdog import Watchdog
 
 
@@ -180,6 +183,22 @@ class AsyncRobotEngine:
             )
             thread_targets.append(("VisionWorker", vision.run))
 
+        # Face display (emotion monitor)
+        self._face_display: FaceDisplay | None = None
+        if self._config.face_display.enabled:
+            fd_cfg = self._config.face_display
+            self._face_display = FaceDisplay(
+                assets_dir=fd_cfg.assets_dir,
+                default_emotion=fd_cfg.default_emotion,
+                monitor=fd_cfg.monitor,
+                width=fd_cfg.width,
+                height=fd_cfg.height,
+            )
+            self._bus.subscribe("emotion", self._face_display.handle_emotion_event)
+            self._bus.subscribe("tts", self._face_display.handle_tts_event)
+            self._bus.subscribe("tts_eos", self._face_display.handle_tts_eos_event)
+            thread_targets.append(("FaceDisplay", self._face_display_loop))
+
         # Start threads
         for name, target in thread_targets:
             t = threading.Thread(target=target, name=name, daemon=True)
@@ -291,6 +310,15 @@ class AsyncRobotEngine:
             await self._bus.publish(
                 Event(type="vision", data={"description": desc}, priority=0)
             )
+
+    def _face_display_loop(self) -> None:
+        """Thread loop for face display — refreshes emotion/speak frames."""
+        assert self._face_display is not None
+        self._face_display.setup_window()
+        while not self._shutdown.is_set():
+            self._face_display.show()
+            cv2.waitKey(30)  # ~33 FPS for smooth lip sync
+        self._face_display.destroy()
 
     async def _on_tts_event(self, event: Event) -> None:
         """Handle TTS event — put text into TTS synthesis queue."""
