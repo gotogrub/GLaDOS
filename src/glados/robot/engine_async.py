@@ -48,6 +48,7 @@ class AsyncRobotEngine:
         self._start_audio = start_audio
         self._shutdown = threading.Event()
         self._speaking = threading.Event()
+        self._listening = threading.Event()  # set when ASR is recording speech
 
         # Async components
         self._bus = EventBus()
@@ -97,6 +98,7 @@ class AsyncRobotEngine:
             context_builder=ctx,
             conversation=self._conv,
             vision_state=self._vision_state,
+            listening_event=self._listening,
         )
 
         # Subscribe brain to events
@@ -151,6 +153,7 @@ class AsyncRobotEngine:
                 llm_queue=self._make_speech_bridge_queue(),
                 shutdown_event=self._shutdown,
                 currently_speaking_event=self._speaking,
+                listening_event=self._listening,
                 interruptible=self._config.interruptible,
                 interrupt_keywords=self._config.interrupt_keywords,
             )

@@ -29,6 +29,7 @@ class SpeechWorker:
         llm_queue: queue.Queue,
         shutdown_event: threading.Event,
         currently_speaking_event: threading.Event,
+        listening_event: threading.Event | None = None,
         interruptible: bool = True,
         interrupt_keywords: list[str] | None = None,
     ) -> None:
@@ -37,6 +38,7 @@ class SpeechWorker:
         self._llm_queue = llm_queue
         self._shutdown = shutdown_event
         self._speaking = currently_speaking_event
+        self._listening = listening_event
         self._interruptible = interruptible
         self._interrupt_kw = [kw.lower() for kw in interrupt_keywords] if interrupt_keywords else None
 
@@ -74,6 +76,8 @@ class SpeechWorker:
                         self._audio_io.stop_speaking()
                         self._speaking.clear()
                 self._recording = True
+                if self._listening:
+                    self._listening.set()
                 self._samples.extend(self._buffer)
             self._samples.append(sample)
             self._gap_counter = 0
@@ -117,6 +121,8 @@ class SpeechWorker:
 
     def _reset(self) -> None:
         self._recording = False
+        if self._listening:
+            self._listening.clear()
         self._samples.clear()
         self._gap_counter = 0
         self._pending_interrupt = False

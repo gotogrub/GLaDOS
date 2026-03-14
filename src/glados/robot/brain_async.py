@@ -1,6 +1,8 @@
 """Async brain: handles speech/vision events, streams LLM, emits TTS events."""
 from __future__ import annotations
 
+import threading
+
 from loguru import logger
 
 from ..core.conversation_store import ConversationStore
@@ -25,6 +27,7 @@ class AsyncBrain:
         context_builder: ContextBuilder | None = None,
         conversation: ConversationStore | None = None,
         vision_state: VisionState | None = None,
+        listening_event: threading.Event | None = None,
     ) -> None:
         self._bus = event_bus
         self._llm = llm_client
@@ -33,6 +36,7 @@ class AsyncBrain:
         )
         self._ctx = context_builder or ContextBuilder()
         self._vision = vision_state
+        self._listening = listening_event
 
     async def handle_speech(self, event: Event) -> None:
         """Process user speech through LLM."""
@@ -45,15 +49,15 @@ class AsyncBrain:
     async def handle_vision(self, event: Event) -> None:
         """Process vision event (autonomy).
 
-        Vision description is already available in VisionState (injected as
-        system context by ContextBuilder).  We only add a short trigger as the
-        "user" message so the model knows it should comment on what it sees.
+        Skipped when user is speaking (listening_event is set) to avoid
+        interrupting the user with vision commentary.
         """
+        if self._listening and self._listening.is_set():
+            logger.debug("Vision event suppressed — user is speaking")
+            return
         desc = event.data.get("description", "")
         if not desc:
             return
-        # Don't duplicate the full vision text as a user message —
-        # ContextBuilder already injects it as [vision] system context.
         self._conv.append({"role": "user", "content": "[наблюдение]"})
         await self._generate(autonomy=True)
 
