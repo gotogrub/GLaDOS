@@ -48,7 +48,7 @@ def get_audio_transcriber(
         from .whisper_asr import AudioTranscriber as WhisperTranscriber
 
         language = kwargs.get("language", "ru")
-        model_size = kwargs.get("model_size", "base")
+        model_size = kwargs.get("model_size")  # None → whisper_asr reads WHISPER_MODEL env
         return WhisperTranscriber(model_size=model_size, language=language)
     else:
         raise ValueError(f"Unsupported ASR engine type: {engine_type}")

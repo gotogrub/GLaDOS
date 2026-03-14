@@ -47,19 +47,16 @@ class AsyncBrain:
         await self._generate(autonomy=False)
 
     async def handle_vision(self, event: Event) -> None:
-        """Process vision event (autonomy).
+        """Update vision state only — no autonomous commentary.
 
-        Skipped when user is speaking (listening_event is set) to avoid
-        interrupting the user with vision commentary.
+        Vision description is stored in VisionState and injected into context
+        by ContextBuilder when the user speaks. GLaDOS sees but only comments
+        when asked — autonomous vision commentary was too noisy and degraded
+        response quality (TTFT growth, repetitive answers).
         """
-        if self._listening and self._listening.is_set():
-            logger.debug("Vision event suppressed — user is speaking")
-            return
-        desc = event.data.get("description", "")
-        if not desc:
-            return
-        self._conv.append({"role": "user", "content": "[наблюдение]"})
-        await self._generate(autonomy=True)
+        # Vision state is already updated by VisionWorker.
+        # Nothing to do here — ContextBuilder will include it in next user turn.
+        pass
 
     def _trim_conversation(self) -> None:
         """Keep system messages + last N turns to prevent context growth."""
