@@ -1,5 +1,5 @@
 Robot:
-  llm_model: "qwen2.5:3b"
+  llm_model: "qwen2.5:7b"
   completion_url: "http://localhost:11434/api/chat"
   api_key: null
   tools_enabled: false
@@ -16,7 +16,7 @@ Robot:
       name: "Создатель"
       description: "Твой создатель. Молодой человек в очках. Обращайся к нему уважительно, но в своём саркастичном стиле."
   llm_options:
-    num_ctx: 1024
+    num_ctx: 2048
     num_thread: 6
   vision:
     camera_index: 0

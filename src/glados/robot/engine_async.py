@@ -173,6 +173,25 @@ class AsyncRobotEngine:
         else:
             self._audio_io = None
 
+        # Face display (unified window — must init before VisionWorker)
+        logger.info("Initializing face display...")
+        self._face_display: FaceDisplay | None = None
+        if self._config.face_display.enabled:
+            fd_cfg = self._config.face_display
+            self._face_display = FaceDisplay(
+                assets_dir=fd_cfg.assets_dir,
+                default_emotion=fd_cfg.default_emotion,
+                monitor=fd_cfg.monitor,
+                width=fd_cfg.width,
+                height=fd_cfg.height,
+                speaking_event=self._speaking,
+            )
+            self._bus.subscribe("emotion", self._face_display.handle_emotion_event)
+            thread_targets.append((
+                "FaceDisplay",
+                lambda: self._face_display.run(self._shutdown),
+            ))
+
         # Vision
         if self._start_vision and self._vision_state:
             from ..vision.fastvlm import FastVLM
@@ -200,27 +219,9 @@ class AsyncRobotEngine:
                 settings=self._config.vision,
                 face_recognizer=face_rec,
                 vlm=vlm,
+                face_display=self._face_display,
             )
             thread_targets.append(("VisionWorker", vision.run))
-
-        # Face display (emotion monitor)
-        logger.info("Initializing face display...")
-        self._face_display: FaceDisplay | None = None
-        if self._config.face_display.enabled:
-            fd_cfg = self._config.face_display
-            self._face_display = FaceDisplay(
-                assets_dir=fd_cfg.assets_dir,
-                default_emotion=fd_cfg.default_emotion,
-                monitor=fd_cfg.monitor,
-                width=fd_cfg.width,
-                height=fd_cfg.height,
-                speaking_event=self._speaking,
-            )
-            self._bus.subscribe("emotion", self._face_display.handle_emotion_event)
-            thread_targets.append((
-                "FaceDisplay",
-                lambda: self._face_display.run(self._shutdown),
-            ))
 
         # Start VoiceLoop AFTER all model loading is done.
         # CTranslate2 and ONNX hold the GIL during init, which would

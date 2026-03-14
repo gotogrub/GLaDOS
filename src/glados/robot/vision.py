@@ -1,13 +1,13 @@
-"""VisionWorker: camera → FastVLM + FaceID → VisionState + events + cv2 display."""
+"""VisionWorker: camera → FastVLM + FaceID → VisionState + events."""
 from __future__ import annotations
 
 import queue
-import textwrap
 import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import cv2
 import numpy as np
@@ -19,13 +19,8 @@ from ..vision.vision_state import VisionState
 from .config import VisionSettings
 from .face_id import FaceRecognizer
 
-# Optional Pillow for Cyrillic text rendering
-try:
-    from PIL import Image, ImageDraw, ImageFont
-
-    _PIL_AVAILABLE = True
-except ImportError:
-    _PIL_AVAILABLE = False
+if TYPE_CHECKING:
+    from .face_display import FaceDisplay
 
 
 @dataclass
@@ -37,15 +32,9 @@ class VisionEvent:
 
 
 class VisionWorker:
-    """Camera → VLM description + face recognition → VisionState + events + OpenCV display."""
+    """Camera → VLM description + face recognition → VisionState + events."""
 
     VISION_PROMPT = "Describe the image briefly, focusing on salient elements."
-
-    # Text panel settings
-    _TEXT_PANEL_W = 480
-    _TEXT_PANEL_H = 200
-    _FONT_SIZE = 16
-    _FONT_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
 
     def __init__(
         self,
@@ -55,7 +44,7 @@ class VisionWorker:
         settings: VisionSettings,
         face_recognizer: FaceRecognizer | None = None,
         vlm: FastVLM | None = None,
-        show_display: bool = True,
+        face_display: "FaceDisplay | None" = None,
     ) -> None:
         self._state = vision_state
         self._event_q = event_queue
@@ -63,18 +52,10 @@ class VisionWorker:
         self._settings = settings
         self._face = face_recognizer
         self._vlm = vlm
-        self._show = show_display
+        self._display = face_display
 
         self._capture: cv2.VideoCapture | None = None
         self._last_frame: NDArray[np.uint8] | None = None
-        self._last_desc: str | None = None
-        self._pil_font: ImageFont.FreeTypeFont | None = None
-
-        if self._show and _PIL_AVAILABLE:
-            try:
-                self._pil_font = ImageFont.truetype(self._FONT_PATH, self._FONT_SIZE)
-            except (OSError, IOError):
-                logger.warning("Font {} not found, text panel disabled", self._FONT_PATH)
 
     def run(self) -> None:
         logger.info("VisionWorker started.")
@@ -90,10 +71,9 @@ class VisionWorker:
                     self._shutdown.wait(timeout=0.01)
                     continue
 
-                # Live preview — every frame, no delay
-                if self._show:
-                    cv2.imshow("GLaDOS Camera", frame)
-                    cv2.waitKey(1)
+                # Push every frame to FaceDisplay for PiP
+                if self._display is not None:
+                    self._display.update_camera(frame)
 
                 # Analysis — only at configured interval
                 now = time.perf_counter()
@@ -143,8 +123,11 @@ class VisionWorker:
 
                 if vision_text:
                     self._state.update(vision_text)
-                    self._last_desc = vision_text
                     logger.success("Vision: {}", vision_text[:100])
+
+                    # Push VLM text to display overlay
+                    if self._display is not None:
+                        self._display.update_vlm_text(vision_text)
 
                     try:
                         self._event_q.put_nowait(VisionEvent(
@@ -156,11 +139,6 @@ class VisionWorker:
                     except queue.Full:
                         pass
 
-                # Show snapshot with face bboxes + text panel
-                if self._show:
-                    self._show_snapshot(frame, face_results)
-                    self._show_text_panel(vision_text)
-
                 if self._settings.save_frames:
                     self._save(frame, vision_text)
 
@@ -169,8 +147,6 @@ class VisionWorker:
         finally:
             if self._capture:
                 self._capture.release()
-            if self._show:
-                cv2.destroyAllWindows()
             logger.info("VisionWorker stopped.")
 
     def _ensure_camera(self) -> bool:
@@ -207,41 +183,6 @@ class VisionWorker:
         diff = cv2.absdiff(frame, self._last_frame)
         return float(np.mean(diff)) / 255.0
 
-    def _show_snapshot(self, frame: NDArray[np.uint8], faces: list[dict]) -> None:
-        """Show analyzed frame with face bounding boxes."""
-        display = frame.copy()
-        for face in faces:
-            x1, y1, x2, y2 = face["bbox"]
-            name = face["name"]
-            sim = face.get("similarity", 0)
-            color = (0, 255, 0) if name != "unknown" else (0, 0, 255)
-            cv2.rectangle(display, (x1, y1), (x2, y2), color, 2)
-            # ASCII-safe label for cv2.putText (names are folder names, ASCII)
-            label = f"{name} ({sim:.2f})" if name != "unknown" else "?"
-            cv2.putText(display, label, (x1, y1 - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-        cv2.imshow("GLaDOS Snapshot", display)
-        cv2.waitKey(1)
-
-    def _show_text_panel(self, text: str) -> None:
-        """Render VLM description as a text panel using PIL for Cyrillic support."""
-        if not text:
-            return
-        if not _PIL_AVAILABLE or not self._pil_font:
-            return
-
-        img = Image.new("RGB", (self._TEXT_PANEL_W, self._TEXT_PANEL_H), (30, 30, 30))
-        draw = ImageDraw.Draw(img)
-
-        # Word-wrap text to fit panel width
-        wrapped = textwrap.fill(text, width=50)
-        draw.text((10, 10), wrapped, fill=(200, 255, 200), font=self._pil_font)
-
-        panel = np.array(img)
-        panel = cv2.cvtColor(panel, cv2.COLOR_RGB2BGR)
-        cv2.imshow("GLaDOS VLM", panel)
-        cv2.waitKey(1)
-
     def _save(self, frame: NDArray[np.uint8], desc: str) -> None:
         try:
             d = Path(self._settings.save_frames_dir)
@@ -257,4 +198,3 @@ class VisionWorker:
                     old.with_suffix(".txt").unlink(missing_ok=True)
         except Exception as e:
             logger.warning("Frame save failed: {}", e)
-
