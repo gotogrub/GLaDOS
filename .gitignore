@@ -187,5 +187,8 @@ faces/
 # Local model files
 model/
 
+# Environment secrets
+.env
+
 # Claude Code
 CLAUDE.md

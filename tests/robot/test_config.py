@@ -1,9 +1,15 @@
+import os
 from pathlib import Path
 import tempfile
 import yaml
 
 
-def test_robot_config_from_yaml():
+def test_robot_config_from_yaml(monkeypatch):
+    # Clear env vars so .env doesn't override test values
+    for key in ("OLLAMA_URL", "OLLAMA_API_KEY", "OLLAMA_MODEL"):
+        monkeypatch.delenv(key, raising=False)
+    # Prevent .env file from being read
+    monkeypatch.chdir(tempfile.gettempdir())
     data = {
         "Robot": {
             "llm_model": "gemma3:4b",

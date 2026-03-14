@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -73,4 +74,38 @@ class RobotConfig(BaseModel):
     def from_yaml(cls, path: str | Path) -> RobotConfig:
         path = Path(path)
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return cls.model_validate(data["Robot"])
+        robot = data["Robot"]
+
+        # Collect env overrides: first check real env vars, then .env file.
+        # Real env vars take priority over .env, .env takes priority over yaml.
+        env_overrides: dict[str, str] = {}
+
+        # Load .env file (lowest priority override)
+        env_path = Path(".env")
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                value = value.strip()
+                if value:
+                    env_overrides[key.strip()] = value
+
+        # Real env vars override .env values
+        for key in ("OLLAMA_URL", "OLLAMA_API_KEY", "OLLAMA_MODEL"):
+            val = os.environ.get(key, "")
+            if val:
+                env_overrides[key] = val
+
+        # Apply overrides to yaml config
+        _ENV_TO_YAML = {
+            "OLLAMA_URL": "completion_url",
+            "OLLAMA_API_KEY": "api_key",
+            "OLLAMA_MODEL": "llm_model",
+        }
+        for env_key, yaml_key in _ENV_TO_YAML.items():
+            if env_key in env_overrides:
+                robot[yaml_key] = env_overrides[env_key]
+
+        return cls.model_validate(robot)
