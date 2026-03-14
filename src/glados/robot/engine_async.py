@@ -6,8 +6,6 @@ import queue
 import threading
 from typing import Any
 
-import cv2
-
 from loguru import logger
 
 from ..ASR import get_audio_transcriber
@@ -110,22 +108,41 @@ class AsyncRobotEngine:
         self._bus.subscribe("tts_eos", self._on_tts_eos)
 
         # TTS + audio models
+        logger.info("Loading TTS ({})...", self._config.voice)
         tts_model = await asyncio.to_thread(get_speech_synthesizer, self._config.voice)
+        logger.info("TTS loaded.")
         stc_converter = stc.SpokenTextConverter()
-
-        # Start VoiceWorker (TTS synthesis) as async task
-        self._voice_task = asyncio.create_task(
-            self._voice_loop(tts_model, stc_converter)
-        )
 
         # Thread-based workers
         thread_targets: list[tuple[str, Any]] = []
 
+        # Load ASR and warmup BEFORE starting async tasks.
+        # CTranslate2 (faster-whisper) holds the GIL during inference,
+        # which deadlocks asyncio.to_thread when other tasks are running.
         if self._start_audio:
             audio_io = get_audio_system("sounddevice")
+            logger.info("Loading ASR ({})...", self._config.asr_engine)
             asr = get_audio_transcriber(engine_type=self._config.asr_engine)
-            await asyncio.to_thread(asr.transcribe_file, resource_path("data/0.wav"))
-            audio_io.start_listening()
+            logger.info("ASR warmup...")
+            asr.transcribe_file(resource_path("data/0.wav"))
+            logger.info("ASR warmup done. Starting audio listener...")
+            try:
+                # start_listening may hang on broken PulseAudio/PipeWire setups.
+                # Run in a thread with a timeout so it doesn't block startup.
+                listen_thread = threading.Thread(
+                    target=audio_io.start_listening, daemon=True
+                )
+                listen_thread.start()
+                listen_thread.join(timeout=5.0)
+                if listen_thread.is_alive():
+                    logger.warning(
+                        "audio_io.start_listening() timed out (5s) — "
+                        "microphone may not work. Check PulseAudio/PipeWire."
+                    )
+                else:
+                    logger.info("Audio listener started.")
+            except Exception as e:
+                logger.warning("Audio listener failed: {}", e)
 
             # SpeechWorker bridges mic→async via thread-safe callback
             speech = SpeechWorker(
@@ -160,16 +177,19 @@ class AsyncRobotEngine:
         if self._start_vision and self._vision_state:
             from ..vision.fastvlm import FastVLM
 
-            vlm = await asyncio.to_thread(FastVLM, resource_path("models/Vision"))
+            logger.info("Loading FastVLM...")
+            vlm = FastVLM(resource_path("models/Vision"))
+            logger.info("FastVLM loaded.")
             face_rec = None
             try:
                 from .face_id import FaceRecognizer
 
-                face_rec = await asyncio.to_thread(
-                    FaceRecognizer,
+                logger.info("Loading FaceID...")
+                face_rec = FaceRecognizer(
                     model_dir=resource_path("models/Face"),
                     face_db_dir=self._config.face_db,
                 )
+                logger.info("FaceID loaded.")
             except FileNotFoundError as e:
                 logger.warning("FaceID models not found: {}", e)
 
@@ -184,6 +204,7 @@ class AsyncRobotEngine:
             thread_targets.append(("VisionWorker", vision.run))
 
         # Face display (emotion monitor)
+        logger.info("Initializing face display...")
         self._face_display: FaceDisplay | None = None
         if self._config.face_display.enabled:
             fd_cfg = self._config.face_display
@@ -197,7 +218,17 @@ class AsyncRobotEngine:
             self._bus.subscribe("emotion", self._face_display.handle_emotion_event)
             self._bus.subscribe("tts", self._face_display.handle_tts_event)
             self._bus.subscribe("tts_eos", self._face_display.handle_tts_eos_event)
-            thread_targets.append(("FaceDisplay", self._face_display_loop))
+            thread_targets.append((
+                "FaceDisplay",
+                lambda: self._face_display.run(self._shutdown),
+            ))
+
+        # Start VoiceLoop AFTER all model loading is done.
+        # CTranslate2 and ONNX hold the GIL during init, which would
+        # deadlock asyncio.to_thread if async tasks were already running.
+        self._voice_task = asyncio.create_task(
+            self._voice_loop(tts_model, stc_converter)
+        )
 
         # Start threads
         for name, target in thread_targets:
@@ -310,15 +341,6 @@ class AsyncRobotEngine:
             await self._bus.publish(
                 Event(type="vision", data={"description": desc}, priority=0)
             )
-
-    def _face_display_loop(self) -> None:
-        """Thread loop for face display — refreshes emotion/speak frames."""
-        assert self._face_display is not None
-        self._face_display.setup_window()
-        while not self._shutdown.is_set():
-            self._face_display.show()
-            cv2.waitKey(30)  # ~33 FPS for smooth lip sync
-        self._face_display.destroy()
 
     async def _on_tts_event(self, event: Event) -> None:
         """Handle TTS event — put text into TTS synthesis queue."""

@@ -158,7 +158,7 @@ cython_debug/
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
-#.idea/
+.idea/
 
 # The large model files
 *.bin
@@ -177,6 +177,15 @@ logs/
 
 # macOS
 .DS_Store
+
+# Vision debug frames
+vision_frames/
+
+# Face DB photos (user data)
+faces/
+
+# Local model files
+model/
 
 # Claude Code
 CLAUDE.md

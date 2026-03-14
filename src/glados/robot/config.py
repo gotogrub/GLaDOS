@@ -23,8 +23,8 @@ class FaceDisplaySettings(BaseModel):
     assets_dir: str = "assets/faces"
     default_emotion: str = "neutral"
     monitor: int = 0
-    width: int = 800
-    height: int = 480
+    width: int = 0
+    height: int = 0
 
 
 class AutonomySettings(BaseModel):

@@ -2,6 +2,7 @@
 
 Shows emotion images on a dedicated monitor — acts as GLaDOS's "face".
 During speech, alternates between speak frames for lip sync animation.
+Uses pygame for reliable fullscreen rendering (OpenCV highgui is not thread-safe).
 
 Assets directory layout:
     assets/faces/
@@ -14,27 +15,25 @@ Assets directory layout:
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 from pathlib import Path
 from typing import Any
 
-import cv2
-import numpy as np
 from loguru import logger
 
 
 class FaceDisplay:
-    """Displays emotion images in a fullscreen OpenCV window with lip sync.
+    """Displays emotion images in a fullscreen pygame window with lip sync.
 
     - Subscribes to "emotion" events to change expression.
     - Subscribes to "tts" / "tts_eos" events to toggle speaking animation.
-    - When speaking: alternates speak_1 / speak_2 at ~8 FPS.
+    - When speaking: alternates speak_1 / speak_2 at configurable FPS.
     - When idle: shows the current emotion image.
     """
 
-    WINDOW_NAME = "GLaDOS Face"
-    _EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
+    WINDOW_TITLE = "GLaDOS Face"
 
     # Map emotion tags → asset filenames (without extension)
     _EMOTION_TO_FILE = {
@@ -51,6 +50,8 @@ class FaceDisplay:
     # Speak animation speed (seconds per frame)
     _SPEAK_FRAME_INTERVAL = 0.12  # ~8 FPS
 
+    _EXTENSIONS = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
+
     def __init__(
         self,
         assets_dir: str | Path = "assets/faces",
@@ -62,41 +63,41 @@ class FaceDisplay:
         self._assets_dir = Path(assets_dir)
         self._default_emotion = default_emotion
         self._monitor = monitor
-        self._width = width
-        self._height = height
+        self._req_width = width
+        self._req_height = height
 
         self._current_emotion = default_emotion
         self._speaking = False
         self._speak_frame_idx = 0
         self._last_speak_switch = 0.0
 
-        self._emotions: dict[str, np.ndarray] = {}
-        self._speak_frames: list[np.ndarray] = []
+        # Will be populated in _load_all (called from run loop thread)
+        self._emotions: dict[str, Any] = {}  # emotion -> pygame.Surface
+        self._speak_frames: list[Any] = []    # pygame.Surface list
         self._lock = threading.Lock()
 
-        self._load_all()
+        self._screen: Any = None  # pygame.Surface
+        self._screen_w = 0
+        self._screen_h = 0
 
     def _load_all(self) -> None:
-        """Load emotion images and speak frames from assets."""
+        """Load emotion images and speak frames (must be called after pygame.init)."""
+        import pygame
+
         loaded_files = 0
 
-        # Load emotion images
         for emotion, filename in self._EMOTION_TO_FILE.items():
-            img = self._load_file(filename)
-            if img is not None:
-                self._emotions[emotion] = img
+            surf = self._load_file(filename, pygame)
+            if surf is not None:
+                self._emotions[emotion] = surf
                 loaded_files += 1
             else:
-                self._emotions[emotion] = self._generate_placeholder(emotion)
+                self._emotions[emotion] = self._generate_placeholder(emotion, pygame)
 
-        # De-duplicate: emotions sharing the same file get the same array
-        # (already handled by loading from filename)
-
-        # Load speak frames
         for name in ("speak_1", "speak_2"):
-            img = self._load_file(name)
-            if img is not None:
-                self._speak_frames.append(img)
+            surf = self._load_file(name, pygame)
+            if surf is not None:
+                self._speak_frames.append(surf)
                 loaded_files += 1
 
         logger.info(
@@ -107,7 +108,6 @@ class FaceDisplay:
         )
 
     def _find_file(self, name: str) -> Path | None:
-        """Find image file by name (without extension)."""
         if not self._assets_dir.exists():
             return None
         for ext in self._EXTENSIONS:
@@ -116,39 +116,37 @@ class FaceDisplay:
                 return path
         return None
 
-    def _load_file(self, name: str) -> np.ndarray | None:
-        """Load and optionally resize an image."""
+    def _load_file(self, name: str, pygame: Any) -> Any | None:
+        """Load image as pygame.Surface, scaled to screen size."""
         path = self._find_file(name)
         if path is None:
             return None
-        img = cv2.imread(str(path), cv2.IMREAD_COLOR)
-        if img is None:
-            logger.warning("Failed to read image: {}", path)
+        try:
+            surf = pygame.image.load(str(path)).convert()
+            surf = pygame.transform.smoothscale(surf, (self._screen_w, self._screen_h))
+            logger.debug("Loaded face asset: {} ({})", name, path.name)
+            return surf
+        except Exception as e:
+            logger.warning("Failed to load {}: {}", path, e)
             return None
-        if self._width > 0 and self._height > 0:
-            img = cv2.resize(img, (self._width, self._height), interpolation=cv2.INTER_AREA)
-        logger.debug("Loaded face asset: {} ({})", name, path.name)
-        return img
 
-    def _generate_placeholder(self, emotion: str) -> np.ndarray:
-        """Generate a simple placeholder when no image file exists."""
-        w = self._width or 800
-        h = self._height or 480
-        img = np.zeros((h, w, 3), dtype=np.uint8)
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        text = emotion.upper()
-        text_size = cv2.getTextSize(text, font, 1.0, 2)[0]
-        x = (w - text_size[0]) // 2
-        y = (h + text_size[1]) // 2
-        cv2.putText(img, text, (x, y), font, 1.0, (0, 180, 0), 2, cv2.LINE_AA)
-        return img
+    def _generate_placeholder(self, emotion: str, pygame: Any) -> Any:
+        """Generate a simple placeholder surface."""
+        surf = pygame.Surface((self._screen_w, self._screen_h))
+        surf.fill((0, 0, 0))
+        font = pygame.font.SysFont("monospace", 48)
+        text = font.render(emotion.upper(), True, (0, 180, 0))
+        rect = text.get_rect(center=(self._screen_w // 2, self._screen_h // 2))
+        surf.blit(text, rect)
+        return surf
 
     # --- State setters (thread-safe) ---
 
     def set_emotion(self, emotion: str) -> None:
-        """Change the displayed emotion."""
         emotion = emotion.lower()
-        if emotion not in self._emotions:
+        # Validate only after images are loaded (run() called).
+        # Before that, accept any emotion — it will be validated at render time.
+        if self._emotions and emotion not in self._emotions:
             logger.warning("Unknown emotion '{}', using default", emotion)
             emotion = self._default_emotion
         with self._lock:
@@ -156,7 +154,6 @@ class FaceDisplay:
         logger.info("FaceDisplay: emotion → {}", emotion.upper())
 
     def set_speaking(self, speaking: bool) -> None:
-        """Toggle speaking animation."""
         with self._lock:
             self._speaking = speaking
             if speaking:
@@ -175,45 +172,71 @@ class FaceDisplay:
     async def handle_tts_eos_event(self, event: Any) -> None:
         self.set_speaking(False)
 
-    # --- Display ---
+    # --- Main display loop (runs in its own thread) ---
 
-    def show(self) -> None:
-        """Display the appropriate frame. Call from the display thread."""
-        now = time.monotonic()
+    def run(self, shutdown_event: threading.Event) -> None:
+        """Main loop — call from a daemon thread."""
+        import pygame
 
-        with self._lock:
-            speaking = self._speaking
-            emotion = self._current_emotion
+        # Ensure pygame uses the correct display
+        os.environ.setdefault("SDL_VIDEO_CENTERED", "1")
 
-        if speaking and self._speak_frames:
-            # Alternate speak frames for lip sync
-            with self._lock:
-                if now - self._last_speak_switch >= self._SPEAK_FRAME_INTERVAL:
-                    self._speak_frame_idx = (self._speak_frame_idx + 1) % len(self._speak_frames)
-                    self._last_speak_switch = now
-                idx = self._speak_frame_idx
-            img = self._speak_frames[idx]
+        pygame.init()
+
+        # Get display info for fullscreen size
+        if self._req_width > 0 and self._req_height > 0:
+            self._screen_w = self._req_width
+            self._screen_h = self._req_height
         else:
-            img = self._emotions.get(emotion)
+            info = pygame.display.Info()
+            self._screen_w = info.current_w
+            self._screen_h = info.current_h
 
-        if img is not None:
-            cv2.imshow(self.WINDOW_NAME, img)
-
-    def setup_window(self) -> None:
-        """Create and configure the fullscreen window."""
-        cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_NORMAL)
-        cv2.setWindowProperty(
-            self.WINDOW_NAME,
-            cv2.WND_PROP_FULLSCREEN,
-            cv2.WINDOW_FULLSCREEN,
+        self._screen = pygame.display.set_mode(
+            (self._screen_w, self._screen_h),
+            pygame.FULLSCREEN | pygame.NOFRAME,
         )
-        logger.info("FaceDisplay: fullscreen window created (monitor {})", self._monitor)
-        self.show()
-        cv2.waitKey(1)
+        pygame.display.set_caption(self.WINDOW_TITLE)
+        pygame.mouse.set_visible(False)
 
-    def destroy(self) -> None:
-        """Close the display window."""
-        try:
-            cv2.destroyWindow(self.WINDOW_NAME)
-        except Exception:
-            pass
+        logger.info(
+            "FaceDisplay: pygame fullscreen {}x{} (monitor {})",
+            self._screen_w, self._screen_h, self._monitor,
+        )
+
+        self._load_all()
+
+        clock = pygame.time.Clock()
+
+        while not shutdown_event.is_set():
+            # Handle pygame events (required to keep window responsive)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    shutdown_event.set()
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    shutdown_event.set()
+
+            now = time.monotonic()
+
+            with self._lock:
+                speaking = self._speaking
+                emotion = self._current_emotion
+
+            if speaking and self._speak_frames:
+                with self._lock:
+                    if now - self._last_speak_switch >= self._SPEAK_FRAME_INTERVAL:
+                        self._speak_frame_idx = (self._speak_frame_idx + 1) % len(self._speak_frames)
+                        self._last_speak_switch = now
+                    idx = self._speak_frame_idx
+                surf = self._speak_frames[idx]
+            else:
+                surf = self._emotions.get(emotion)
+
+            if surf is not None:
+                self._screen.blit(surf, (0, 0))
+                pygame.display.flip()
+
+            clock.tick(30)  # 30 FPS
+
+        pygame.quit()
+        logger.info("FaceDisplay stopped.")
