@@ -260,7 +260,7 @@ class AsyncRobotEngine:
         )
 
     async def stop(self) -> None:
-        """Shutdown all workers."""
+        """Shutdown all workers and release all resources."""
         logger.info("Shutting down...")
         self._shutdown.set()
 
@@ -272,22 +272,60 @@ class AsyncRobotEngine:
                 pass
 
         for t in self._threads:
-            t.join(timeout=5.0)
+            t.join(timeout=3.0)
+            if t.is_alive():
+                logger.warning("Thread {} did not stop in time.", t.name)
+
+        # Stop all sounddevice streams to release audio device
+        try:
+            import sounddevice as sd
+            sd.stop()
+        except Exception:
+            pass
 
         if self._audio_io:
-            self._audio_io.stop_listening()
+            try:
+                self._audio_io.stop_listening()
+            except Exception:
+                pass
 
         logger.info("AsyncRobotEngine stopped.")
+
+    def _sync_cleanup(self) -> None:
+        """Synchronous cleanup — called when asyncio loop is gone."""
+        self._shutdown.set()
+        try:
+            import sounddevice as sd
+            sd.stop()
+        except Exception:
+            pass
+        if self._audio_io:
+            try:
+                self._audio_io.stop_listening()
+            except Exception:
+                pass
+        for t in self._threads:
+            t.join(timeout=2.0)
 
     def run(self) -> None:
         """Blocking entry point — runs asyncio event loop."""
         try:
             asyncio.run(self._run_async())
         except KeyboardInterrupt:
-            logger.info("Keyboard interrupt.")
+            logger.info("Keyboard interrupt — cleaning up...")
+            self._sync_cleanup()
+            logger.info("Cleanup done.")
 
     async def _run_async(self) -> None:
         await self.start()
+
+        # Handle Ctrl+C gracefully inside asyncio
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(
+            __import__("signal").SIGINT,
+            lambda: self._shutdown.set(),
+        )
+
         try:
             while not self._shutdown.is_set():
                 await asyncio.sleep(0.5)
