@@ -17,7 +17,7 @@ class AsyncBrain:
     """Processes speech/vision events through LLM and emits TTS sentences."""
 
     # Keep last N user/assistant message pairs (not counting system messages).
-    MAX_CONVERSATION_TURNS: int = 10
+    MAX_CONVERSATION_TURNS: int = 20
 
     def __init__(
         self,

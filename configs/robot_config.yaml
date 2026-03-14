@@ -16,7 +16,7 @@ Robot:
       name: "Создатель"
       description: "Твой создатель. Молодой человек в очках. Обращайся к нему уважительно, но в своём саркастичном стиле."
   llm_options:
-    num_ctx: 2048
+    num_ctx: 4096
     num_thread: 6
   vision:
     camera_index: 0
