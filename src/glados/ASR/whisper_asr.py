@@ -18,11 +18,17 @@ class AudioTranscriber:
 
     def __init__(
         self,
-        model_size: str = DEFAULT_MODEL_SIZE,
+        model_size: str | None = None,
         language: str = DEFAULT_LANGUAGE,
         **kwargs: Any,
     ) -> None:
+        import os
+
         from faster_whisper import WhisperModel
+
+        # Allow override via env var (e.g. WHISPER_MODEL=medium)
+        if model_size is None:
+            model_size = os.environ.get("WHISPER_MODEL", self.DEFAULT_MODEL_SIZE)
 
         self._language = language
         logger.success("Loading Whisper ASR model '{}' (language={})...", model_size, language)

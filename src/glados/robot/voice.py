@@ -122,6 +122,7 @@ class SpeakerWorker:
             except Exception as e:
                 logger.warning("Speaker: sd.wait() error: {}", e)
 
+            self._speaking.clear()
             self._audio.stop_speaking()
             logger.info("Speaker: chunk done")
 

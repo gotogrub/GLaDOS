@@ -80,7 +80,7 @@ class RobotConfig(BaseModel):
         # Real env vars take priority over .env, .env takes priority over yaml.
         env_overrides: dict[str, str] = {}
 
-        # Load .env file (lowest priority override)
+        # Load .env file into os.environ (setdefault — won't override real env vars)
         env_path = Path(".env")
         if env_path.exists():
             for line in env_path.read_text(encoding="utf-8").splitlines():
@@ -90,7 +90,9 @@ class RobotConfig(BaseModel):
                 key, _, value = line.partition("=")
                 value = value.strip()
                 if value:
-                    env_overrides[key.strip()] = value
+                    key = key.strip()
+                    os.environ.setdefault(key, value)
+                    env_overrides[key] = os.environ[key]
 
         # Real env vars override .env values
         for key in ("OLLAMA_URL", "OLLAMA_API_KEY", "OLLAMA_MODEL"):

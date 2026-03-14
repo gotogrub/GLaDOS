@@ -324,13 +324,22 @@ class FaceDisplay:
             with self._lock:
                 emotion = self._current_emotion
 
-            if speaking and self._speak_frames:
+            idle_surf = self._emotions.get(emotion)
+
+            if speaking and self._speak_frames and idle_surf is not None:
+                # Build speak sequence: idle → speak_1 → idle → speak_2
+                # This creates natural mouth open/close animation
+                speak_sequence = []
+                for sf in self._speak_frames:
+                    speak_sequence.append(idle_surf)
+                    speak_sequence.append(sf)
+
                 if now - self._last_speak_switch >= self._SPEAK_FRAME_INTERVAL:
-                    self._speak_frame_idx = (self._speak_frame_idx + 1) % len(self._speak_frames)
+                    self._speak_frame_idx = (self._speak_frame_idx + 1) % len(speak_sequence)
                     self._last_speak_switch = now
-                face_surf = self._speak_frames[self._speak_frame_idx]
+                face_surf = speak_sequence[self._speak_frame_idx % len(speak_sequence)]
             else:
-                face_surf = self._emotions.get(emotion)
+                face_surf = idle_surf
 
             # Draw: face background → camera PiP → text overlay
             if face_surf is not None:
