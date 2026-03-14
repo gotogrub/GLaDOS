@@ -214,10 +214,9 @@ class AsyncRobotEngine:
                 monitor=fd_cfg.monitor,
                 width=fd_cfg.width,
                 height=fd_cfg.height,
+                speaking_event=self._speaking,
             )
             self._bus.subscribe("emotion", self._face_display.handle_emotion_event)
-            self._bus.subscribe("tts", self._face_display.handle_tts_event)
-            self._bus.subscribe("tts_eos", self._face_display.handle_tts_eos_event)
             thread_targets.append((
                 "FaceDisplay",
                 lambda: self._face_display.run(self._shutdown),

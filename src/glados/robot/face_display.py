@@ -59,6 +59,7 @@ class FaceDisplay:
         monitor: int = 0,
         width: int = 0,
         height: int = 0,
+        speaking_event: threading.Event | None = None,
     ) -> None:
         self._assets_dir = Path(assets_dir)
         self._default_emotion = default_emotion
@@ -67,7 +68,8 @@ class FaceDisplay:
         self._req_height = height
 
         self._current_emotion = default_emotion
-        self._speaking = False
+        # Use SpeakerWorker's speaking_event for lip sync (set when audio plays)
+        self._speaking_event = speaking_event
         self._speak_frame_idx = 0
         self._last_speak_switch = 0.0
 
@@ -153,24 +155,11 @@ class FaceDisplay:
             self._current_emotion = emotion
         logger.info("FaceDisplay: emotion → {}", emotion.upper())
 
-    def set_speaking(self, speaking: bool) -> None:
-        with self._lock:
-            self._speaking = speaking
-            if speaking:
-                self._speak_frame_idx = 0
-                self._last_speak_switch = time.monotonic()
-
     # --- EventBus handlers ---
 
     async def handle_emotion_event(self, event: Any) -> None:
         emotion = event.data.get("emotion", self._default_emotion)
         self.set_emotion(emotion)
-
-    async def handle_tts_event(self, event: Any) -> None:
-        self.set_speaking(True)
-
-    async def handle_tts_eos_event(self, event: Any) -> None:
-        self.set_speaking(False)
 
     # --- Main display loop (runs in its own thread) ---
 
@@ -218,17 +207,20 @@ class FaceDisplay:
 
             now = time.monotonic()
 
+            # Check if audio is actually playing (from SpeakerWorker)
+            speaking = (
+                self._speaking_event is not None
+                and self._speaking_event.is_set()
+            )
+
             with self._lock:
-                speaking = self._speaking
                 emotion = self._current_emotion
 
             if speaking and self._speak_frames:
-                with self._lock:
-                    if now - self._last_speak_switch >= self._SPEAK_FRAME_INTERVAL:
-                        self._speak_frame_idx = (self._speak_frame_idx + 1) % len(self._speak_frames)
-                        self._last_speak_switch = now
-                    idx = self._speak_frame_idx
-                surf = self._speak_frames[idx]
+                if now - self._last_speak_switch >= self._SPEAK_FRAME_INTERVAL:
+                    self._speak_frame_idx = (self._speak_frame_idx + 1) % len(self._speak_frames)
+                    self._last_speak_switch = now
+                surf = self._speak_frames[self._speak_frame_idx]
             else:
                 surf = self._emotions.get(emotion)
 

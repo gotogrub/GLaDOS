@@ -21,14 +21,16 @@ def test_face_display_unknown_emotion_before_load():
         assert fd._current_emotion == "nonexistent"
 
 
-def test_face_display_speaking_toggle():
+def test_face_display_speaking_from_event():
+    import threading
+    speaking = threading.Event()
     with tempfile.TemporaryDirectory() as tmpdir:
-        fd = FaceDisplay(assets_dir=tmpdir, width=200, height=120)
-        assert not fd._speaking
-        fd.set_speaking(True)
-        assert fd._speaking
-        fd.set_speaking(False)
-        assert not fd._speaking
+        fd = FaceDisplay(assets_dir=tmpdir, width=200, height=120, speaking_event=speaking)
+        assert not speaking.is_set()
+        speaking.set()
+        assert speaking.is_set()
+        speaking.clear()
+        assert not speaking.is_set()
 
 
 def test_face_display_finds_image_files(tmp_path):
