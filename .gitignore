@@ -190,5 +190,13 @@ model/
 # Environment secrets
 .env
 
+# Research / scratch docs
+ROBOT_ARCHITECTURE_RESEARCH.md
+compass_artifact_*.md
+
+# Generated media
+trailer_*.mp4
+glados_meme.gif
+
 # Claude Code
 CLAUDE.md

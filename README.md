@@ -84,17 +84,23 @@ python -m glados robot --config configs/robot_config.yaml
 ```
 
 Architecture:
-- **Async EventBus** — pub/sub in the main asyncio loop (speech, vision, tts, tts_eos events)
+- **Async EventBus** — pub/sub in the main asyncio loop (speech, vision, tts, tts_eos, emotion events)
 - **AsyncBrain** — streams LLM tokens, emits TTS chunks mid-sentence (4-word threshold) for low latency
 - **Thread workers** — SpeechWorker, VisionWorker, SpeakerWorker run blocking I/O in daemon threads
 - **VoiceLoop** — async TTS synthesis task bridges text→audio via `asyncio.to_thread`
 - **Watchdog** — monitors worker threads, logs failures
+- **Memory system** — SQLite (facts, mood, diary) + ChromaDB (semantic search) for long-term memory
 
 Features:
 - **Face recognition** via SCRFD + ArcFace (ONNX) with per-face profiles and descriptions
-- **3 OpenCV windows** — live camera feed, analyzed snapshots with face bboxes, VLM text panel (Cyrillic via PIL)
+- **Unified pygame display** — emotion face + camera PiP + VLM text overlay in one window (F11 for fullscreen)
+- **12-state emotion system** — `[emotion:sarcastic,0.8]` tags with intensity, drives face animations
+- **Lip sync** — mouth open/close animation synced to actual audio playback
+- **Circadian personality** — changes behavior by time of day (night/morning/day/evening)
+- **Long-term memory** — remembers facts about people, recalls relevant past conversations
 - **Streaming TTS** — speech starts before the full sentence is generated
-- **Conversation trimming** — keeps last 10 turns to prevent context growth and TTFT degradation
+- **Conversation trimming** — keeps last 20 turns to prevent context growth and TTFT degradation
+- **Remote LLM** — supports remote Ollama server via `.env` (OLLAMA_URL, OLLAMA_MODEL)
 - **Per-run file logging** — `logs/YYYY-MM-DD_runNN.log` with DEBUG level
 
 #### Adding faces
@@ -108,35 +114,49 @@ faces/
     photo1.jpg
 ```
 
-Photos are indexed at startup. Configure face profiles in `robot_config.yaml`:
+Photos are indexed at startup. Use the collection script for easy capture:
+
+```bash
+python scripts/collect_faces.py creator --count 15
+```
+
+Configure face profiles in `robot_config.yaml`:
 
 ```yaml
 face_names:
   creator:
     name: "Creator"
     description: "Your creator. A young man with glasses. Treat him respectfully, but in your sarcastic style."
-  alice:
-    name: "Alice"
-    description: "A colleague. She likes cats."
 ```
 
 The description is injected into LLM context when the face is recognized, so GLaDOS knows *who* she's talking to.
+
+#### Remote LLM
+
+Configure via `.env` file (see `.env.example`):
+
+```bash
+OLLAMA_URL=http://192.168.1.100:11434/api/chat
+OLLAMA_MODEL=qwen3:14b
+WHISPER_MODEL=medium
+```
+
+The `/no_think` directive in the system prompt disables qwen3's thinking mode, reducing TTFT from ~10s to ~1-2s.
 
 #### Roadmap
 
 - **Phase A** (done): Critical fixes — TTS playback, FaceID detection, sd.wait()
 - **Phase B** (done): Async architecture — EventBus, AsyncBrain, streaming TTS, Watchdog
-- **Phase C** (planned): PipelineMetrics, PulseAudio AEC, multiprocessing for CPU-bound tasks
-- **Phase D** (planned): Emotion face display — LLM emotion tags → fullscreen images on a monitor (GLaDOS "face")
-- **Phase E** (planned): Motor control via ToolExecutor (GPIO, serial), obstacle sensors
-- **Phase F** (planned): Navigation (SLAM), path planning, autonomous movement
+- **Phase C** (done): Cognitive overhaul — /no_think, 12-state emotions, circadian system, structured prompt
+- **Phase D** (done): Memory system — SQLite + ChromaDB, fact extraction, semantic recall
+- **Phase E** (planned): PipelineMetrics, PulseAudio AEC, remote ASR/VLM
+- **Phase F** (planned): Motor control via ToolExecutor (GPIO, serial), obstacle sensors
+- **Phase G** (planned): Navigation (SLAM), path planning, autonomous movement
 
 ## Configuration
 
 Config files:
-- `configs/glados_config.yaml` — English (original)
-- `configs/glados_config_ru.yaml` — Russian (full features)
-- `configs/glados_config_ru_lite.yaml` — Russian (lightweight, for mini-PCs)
+- `configs/robot_config.yaml` — Robot mode (async engine, recommended)
 
 ### Voices
 
