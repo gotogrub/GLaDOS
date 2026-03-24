@@ -118,7 +118,10 @@ class AsyncBrain:
 
         # Publish detected emotion
         await self._bus.publish(
-            Event(type="emotion", data={"emotion": emotion_parser.emotion}, priority=5)
+            Event(type="emotion", data={
+                "emotion": emotion_parser.emotion,
+                "intensity": emotion_parser.intensity,
+            }, priority=5)
         )
 
         # Flush remaining text

@@ -53,6 +53,16 @@ def test_context_face_names_only_when_present():
     assert "Создатель" not in vision_msgs[0]["content"]
 
 
+def test_context_injects_circadian_modifier():
+    cb = ContextBuilder()
+    messages = [{"role": "system", "content": "personality"}]
+    result = cb.build(messages=messages, vision_desc=None, autonomy=False)
+    time_msgs = [m for m in result if "[Время:" in m.get("content", "")]
+    assert len(time_msgs) == 1
+    assert any(period in time_msgs[0]["content"]
+               for period in ["ночь]", "утро]", "день]", "вечер]"])
+
+
 def test_context_face_profile_without_description():
     profiles = {"bob": FaceProfile(name="Боб")}
     cb = ContextBuilder(face_profiles=profiles)

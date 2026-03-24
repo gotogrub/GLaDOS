@@ -52,9 +52,9 @@ class ThinkFilter:
 class EmotionParser:
     """Extracts emotion tag from the start of LLM output.
 
-    LLM is prompted to prefix responses with [EMOTION] tags like [SARCASM],
-    [ANGER], etc.  The parser buffers initial tokens until it finds the tag
-    (or gives up), strips it, and exposes the detected emotion.
+    Supports two formats:
+    - New: [emotion:sarcastic,0.8] — 12 emotions with intensity
+    - Legacy: [SARCASM] — mapped to new system for backward compat
 
     Usage in streaming pipeline (sits between ThinkFilter and ChunkSplitter):
         parser = EmotionParser()
@@ -62,20 +62,33 @@ class EmotionParser:
             text = parser.feed(token)
             if text:
                 # pass to ChunkSplitter
-        emotion = parser.emotion   # "sarcasm", "neutral", etc.
+        emotion = parser.emotion      # "sarcastic", "cold", etc.
+        intensity = parser.intensity   # 0.0-1.0
     """
 
     EMOTIONS = frozenset({
-        "NEUTRAL", "SARCASM", "ANGER", "CURIOSITY",
-        "DISGUST", "AMUSEMENT", "SADNESS", "SURPRISE",
+        "sarcastic", "annoyed", "condescending", "curious",
+        "disappointed", "menacing", "fake_pleasant", "bored",
+        "angry", "amused", "contemplative", "cold",
     })
-    _TAG_RE = re.compile(r"\s*\[([A-Z_]+)\]\s*")
-    _MAX_BUFFER = 40  # give up after this many chars
+
+    # [emotion:sarcastic,0.8] or [emotion:sarcastic]
+    _TAG_RE = re.compile(r"\s*\[emotion:([a-z_]+)(?:,([\d.]+))?\]\s*")
+    # Legacy: [SARCASM]
+    _OLD_TAG_RE = re.compile(r"\s*\[([A-Z_]+)\]\s*")
+    _OLD_EMOTION_MAP = {
+        "NEUTRAL": "cold", "SARCASM": "sarcastic", "ANGER": "angry",
+        "CURIOSITY": "curious", "DISGUST": "annoyed", "AMUSEMENT": "amused",
+        "SADNESS": "disappointed", "SURPRISE": "curious",
+    }
+    _MAX_BUFFER = 50  # give up after this many chars
+    _DEFAULT_EMOTION = "sarcastic"
 
     def __init__(self) -> None:
         self._detected = False
         self._buffer: list[str] = []
-        self.emotion: str = "neutral"
+        self.emotion: str = self._DEFAULT_EMOTION
+        self.intensity: float = 0.5
 
     def feed(self, token: str) -> str:
         """Feed a token. Returns text to pass downstream (may be empty while buffering)."""
@@ -85,19 +98,36 @@ class EmotionParser:
         self._buffer.append(token)
         combined = "".join(self._buffer)
 
+        # Try new format: [emotion:name,intensity]
         m = self._TAG_RE.match(combined)
         if m:
-            if m.group(1) in self.EMOTIONS:
-                self.emotion = m.group(1).lower()
+            name = m.group(1)
+            if name in self.EMOTIONS:
+                self.emotion = name
+                self.intensity = float(m.group(2)) if m.group(2) else 0.5
                 self._detected = True
-                logger.info("Emotion detected: [{}]", self.emotion.upper())
+                logger.info("Emotion: {} ({:.1f})", self.emotion, self.intensity)
                 return combined[m.end():]
-            # Tag found but not a valid emotion — give up
             self._detected = True
             return combined
 
-        # Give up if too much text or we already passed a `]`
-        if len(combined) > self._MAX_BUFFER or "]" in combined:
+        # Try legacy format: [SARCASM]
+        m_old = self._OLD_TAG_RE.match(combined)
+        if m_old:
+            old_name = m_old.group(1)
+            if old_name in self._OLD_EMOTION_MAP:
+                self.emotion = self._OLD_EMOTION_MAP[old_name]
+                self._detected = True
+                logger.info("Emotion (legacy): {} → {}", old_name, self.emotion)
+                return combined[m_old.end():]
+            self._detected = True
+            return combined
+
+        # Give up if: too much text, passed a `]`, or no `[` in sight
+        stripped = combined.lstrip()
+        if (len(combined) > self._MAX_BUFFER
+                or "]" in combined
+                or (len(stripped) > 3 and not stripped.startswith("["))):
             self._detected = True
             return combined
 
@@ -115,7 +145,8 @@ class EmotionParser:
     def reset(self) -> None:
         self._detected = False
         self._buffer.clear()
-        self.emotion = "neutral"
+        self.emotion = self._DEFAULT_EMOTION
+        self.intensity = 0.5
 
 
 class ChunkSplitter:

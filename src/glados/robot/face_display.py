@@ -39,14 +39,28 @@ class FaceDisplay:
     WINDOW_TITLE = "GLaDOS"
 
     _EMOTION_TO_FILE = {
-        "neutral":   "normal",
-        "sarcasm":   "normal",
-        "anger":     "angry",
-        "curiosity": "normal",
-        "disgust":   "angry",
-        "amusement": "normal",
-        "sadness":   "sad",
-        "surprise":  "surprised",
+        # New 12-state system
+        "sarcastic":     "normal",
+        "annoyed":       "angry",
+        "condescending": "normal",
+        "curious":       "surprised",
+        "disappointed":  "sad",
+        "menacing":      "angry",
+        "fake_pleasant": "normal",
+        "bored":         "normal",
+        "angry":         "angry",
+        "amused":        "normal",
+        "contemplative": "sad",
+        "cold":          "normal",
+        # Legacy fallbacks
+        "neutral":       "normal",
+        "sarcasm":       "normal",
+        "anger":         "angry",
+        "curiosity":     "surprised",
+        "disgust":       "angry",
+        "amusement":     "normal",
+        "sadness":       "sad",
+        "surprise":      "surprised",
     }
 
     _SPEAK_FRAME_INTERVAL = 0.12  # ~8 FPS lip sync

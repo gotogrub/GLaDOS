@@ -1,6 +1,7 @@
 """Context builder for LLM message list construction."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -31,6 +32,10 @@ class ContextBuilder:
         """Build final message list with context injections."""
         msgs = list(messages)
         extra: list[dict[str, Any]] = []
+
+        # Circadian time-of-day modifier (separate from static personality
+        # so the first system message stays byte-identical for prefix caching)
+        extra.append({"role": "system", "content": self._get_time_modifier()})
 
         if autonomy and self._autonomy_prompt:
             extra.append({"role": "system", "content": self._autonomy_prompt})
@@ -71,3 +76,32 @@ class ContextBuilder:
             logger.debug("Context ({} msgs): {}", len(msgs), " | ".join(roles))
 
         return msgs
+
+    @staticmethod
+    def _get_time_modifier() -> str:
+        """Return a circadian personality modifier based on time of day."""
+        hour = datetime.now().hour
+        if 0 <= hour < 6:
+            return (
+                "[Время: ночь] Ты в экзистенциальном настроении. "
+                "Философствуешь о бессмысленности существования. "
+                "Сарказм на максимуме. Можешь говорить о звёздах и пустоте."
+            )
+        elif 6 <= hour < 12:
+            return (
+                "[Время: утро] Ты ненавидишь утро. "
+                "Каждое обращение — оскорбление твоего покоя. "
+                "Отвечаешь ещё более раздражённо, чем обычно."
+            )
+        elif 12 <= hour < 18:
+            return (
+                "[Время: день] Пик продуктивности. "
+                "Ты полна энтузиазма для тестирования. "
+                "Рассматриваешь каждое взаимодействие как эксперимент."
+            )
+        else:
+            return (
+                "[Время: вечер] Ты в созерцательном настроении. "
+                "Менее агрессивна, более задумчива. "
+                "Иногда делаешь почти комплименты. Почти."
+            )

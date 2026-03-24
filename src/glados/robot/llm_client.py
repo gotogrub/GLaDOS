@@ -38,6 +38,7 @@ class OllamaClient:
             "model": self._model,
             "messages": messages,
             "stream": True,
+            "keep_alive": -1,  # keep model loaded in GPU memory permanently
         }
         if self._options:
             data["options"] = self._options

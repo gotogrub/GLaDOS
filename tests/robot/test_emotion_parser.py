@@ -1,73 +1,103 @@
 from glados.robot.text_pipeline import EmotionParser
 
 
-def test_emotion_detected_sarcasm():
+def test_new_format_with_intensity():
     p = EmotionParser()
-    out = p.feed("[SARCASM] ")
-    out += p.feed("Hello world")
-    assert p.emotion == "sarcasm"
-    assert "Hello world" in out
-    assert "[SARCASM]" not in out
+    out = p.feed("[emotion:sarcastic,0.8] Hello")
+    assert p.emotion == "sarcastic"
+    assert p.intensity == 0.8
+    assert "Hello" in out
+    assert "[emotion:" not in out
 
 
-def test_emotion_detected_anger():
+def test_new_format_without_intensity():
     p = EmotionParser()
-    out = p.feed("[ANG")
-    assert out == ""  # still buffering
-    out += p.feed("ER] Shut up")
-    assert p.emotion == "anger"
+    out = p.feed("[emotion:angry] Shut up")
+    assert p.emotion == "angry"
+    assert p.intensity == 0.5  # default
     assert "Shut up" in out
 
 
-def test_emotion_default_neutral():
+def test_new_format_split_tokens():
     p = EmotionParser()
-    assert p.emotion == "neutral"
+    out = p.feed("[emotion:cond")
+    assert out == ""
+    out += p.feed("escending,0.7] Text")
+    assert p.emotion == "condescending"
+    assert p.intensity == 0.7
+    assert "Text" in out
 
 
-def test_emotion_no_tag_passes_through():
+def test_legacy_format_sarcasm():
     p = EmotionParser()
-    # Text without a tag — parser gives up after _MAX_BUFFER chars
+    out = p.feed("[SARCASM] Hello")
+    assert p.emotion == "sarcastic"
+    assert "Hello" in out
+
+
+def test_legacy_format_anger():
+    p = EmotionParser()
+    out = p.feed("[ANGER] Go away")
+    assert p.emotion == "angry"
+
+
+def test_legacy_format_all_mapped():
+    for old, new in EmotionParser._OLD_EMOTION_MAP.items():
+        p = EmotionParser()
+        p.feed(f"[{old}] text")
+        assert p.emotion == new, f"Failed: {old} → expected {new}, got {p.emotion}"
+
+
+def test_default_emotion():
+    p = EmotionParser()
+    assert p.emotion == "sarcastic"
+    assert p.intensity == 0.5
+
+
+def test_no_tag_passes_through():
+    p = EmotionParser()
     result = ""
-    for word in "Ну привет, как дела у тебя сегодня, дорогой?".split():
+    for word in "Привет как дела у тебя сегодня дорогой друг мой?".split():
         result += p.feed(word + " ")
-    assert p.emotion == "neutral"
-    assert "привет" in result
+    assert p.emotion == "sarcastic"  # default
+    assert "Привет" in result
 
 
-def test_emotion_unknown_tag_passes_through():
+def test_unknown_tag_passes_through():
     p = EmotionParser()
     out = p.feed("[UNKNOWN] text")
-    # UNKNOWN not in EMOTIONS — parser gives up at ']'
-    assert p.emotion == "neutral"
+    assert p.emotion == "sarcastic"  # default
     assert "[UNKNOWN]" in out
 
 
-def test_emotion_reset():
+def test_reset():
     p = EmotionParser()
-    p.feed("[SARCASM] hi")
-    assert p.emotion == "sarcasm"
+    p.feed("[emotion:angry,0.9] hi")
+    assert p.emotion == "angry"
+    assert p.intensity == 0.9
     p.reset()
-    assert p.emotion == "neutral"
+    assert p.emotion == "sarcastic"
+    assert p.intensity == 0.5
     assert not p._detected
 
 
-def test_emotion_tag_with_leading_whitespace():
-    p = EmotionParser()
-    out = p.feed("  [CURIOSITY] What is this?")
-    assert p.emotion == "curiosity"
-    assert "What is this?" in out
-
-
-def test_emotion_all_valid_tags():
-    for tag in EmotionParser.EMOTIONS:
+def test_all_new_emotions():
+    for emotion in EmotionParser.EMOTIONS:
         p = EmotionParser()
-        p.feed(f"[{tag}] text")
-        assert p.emotion == tag.lower(), f"Failed for {tag}"
+        p.feed(f"[emotion:{emotion},0.5] text")
+        assert p.emotion == emotion, f"Failed for {emotion}"
 
 
-def test_emotion_passthrough_after_detection():
+def test_passthrough_after_detection():
     p = EmotionParser()
-    p.feed("[AMUSEMENT] first")
+    p.feed("[emotion:amused,0.6] first")
     out = p.feed(" second chunk")
     assert out == " second chunk"
-    assert p.emotion == "amusement"
+
+
+def test_flush_unreleased_buffer():
+    p = EmotionParser()
+    p.feed("[emotion:bor")  # incomplete, still buffering
+    leftover = p.flush()
+    assert "[emotion:bor" in leftover
+    assert p._detected
