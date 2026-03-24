@@ -83,11 +83,26 @@ class AsyncRobotEngine:
         if self._config.knowledge_path:
             knowledge = KnowledgeStore(resource_path(self._config.knowledge_path))
 
+        # Memory system (SQLite + ChromaDB)
+        from .memory import SQLiteStore, VectorStore, MemoryGate
+
+        logger.info("Initializing memory system...")
+        sqlite_store = SQLiteStore(db_path="data/memory.db")
+        vector_store: VectorStore | None = None
+        memory_gate: MemoryGate | None = None
+        try:
+            vector_store = VectorStore(persist_dir="data/chroma")
+            memory_gate = MemoryGate(sqlite=sqlite_store, vector=vector_store)
+        except Exception as e:
+            logger.warning("ChromaDB not available, memory search disabled: {}", e)
+
         # Context builder
         ctx = ContextBuilder(
             face_profiles=self._config.get_face_profiles(),
             knowledge_store=knowledge,
             autonomy_prompt=self._config.autonomy.tick_prompt,
+            sqlite_store=sqlite_store,
+            vector_store=vector_store,
         )
 
         # Brain
@@ -99,6 +114,7 @@ class AsyncRobotEngine:
             conversation=self._conv,
             vision_state=self._vision_state,
             listening_event=self._listening,
+            memory_gate=memory_gate,
         )
 
         # Subscribe brain to events

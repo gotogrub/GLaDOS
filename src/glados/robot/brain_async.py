@@ -10,6 +10,7 @@ from ..vision.vision_state import VisionState
 from .context import ContextBuilder
 from .event_bus import Event, EventBus
 from .llm_client import OllamaClient
+from .memory.memory_gate import MemoryGate
 from .text_pipeline import ChunkSplitter, EmotionParser, ThinkFilter
 
 
@@ -28,6 +29,7 @@ class AsyncBrain:
         conversation: ConversationStore | None = None,
         vision_state: VisionState | None = None,
         listening_event: threading.Event | None = None,
+        memory_gate: MemoryGate | None = None,
     ) -> None:
         self._bus = event_bus
         self._llm = llm_client
@@ -37,12 +39,15 @@ class AsyncBrain:
         self._ctx = context_builder or ContextBuilder()
         self._vision = vision_state
         self._listening = listening_event
+        self._memory = memory_gate
+        self._last_user_text = ""
 
     async def handle_speech(self, event: Event) -> None:
         """Process user speech through LLM."""
         text = event.data.get("text", "")
         if not text:
             return
+        self._last_user_text = text
         self._conv.append({"role": "user", "content": text})
         await self._generate(autonomy=False)
 
@@ -140,5 +145,16 @@ class AsyncBrain:
         if full_text:
             self._conv.append({"role": "assistant", "content": full_text})
             logger.success("LLM ({} chunks): {}", chunks_emitted, full_text[:120])
+            # Save to long-term memory (non-blocking, heuristic-based)
+            if self._memory and self._last_user_text and not autonomy:
+                try:
+                    self._memory.evaluate_and_save(
+                        user_text=self._last_user_text,
+                        assistant_text=full_text,
+                        emotion=emotion_parser.emotion,
+                        intensity=emotion_parser.intensity,
+                    )
+                except Exception as e:
+                    logger.warning("Memory save failed: {}", e)
         else:
             logger.warning("LLM returned empty response")

@@ -8,20 +8,35 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from .config import FaceProfile
+    from .memory.sqlite_store import SQLiteStore
+    from .memory.vector_store import VectorStore
 
 
 class ContextBuilder:
-    """Builds LLM message list with vision, knowledge, and face name injections."""
+    """Builds LLM message list with vision, knowledge, memory, and face injections.
+
+    Context layout (per research):
+        System Prompt (personality)           ~500-1000 tokens (static, prefix-cached)
+        Circadian modifier                   ~50 tokens
+        User facts (from SQLite)             ~100-200 tokens
+        Retrieved memories (from ChromaDB)   ~200-500 tokens
+        Vision context                       ~50-100 tokens
+        Conversation history (sliding window) ~2000-4000 tokens
+    """
 
     def __init__(
         self,
         face_profiles: dict[str, FaceProfile] | None = None,
         knowledge_store: Any | None = None,
         autonomy_prompt: str | None = None,
+        sqlite_store: "SQLiteStore | None" = None,
+        vector_store: "VectorStore | None" = None,
     ) -> None:
         self._faces = face_profiles or {}
         self._knowledge = knowledge_store
         self._autonomy_prompt = autonomy_prompt
+        self._sqlite = sqlite_store
+        self._vector = vector_store
 
     def build(
         self,
@@ -39,6 +54,32 @@ class ContextBuilder:
 
         if autonomy and self._autonomy_prompt:
             extra.append({"role": "system", "content": self._autonomy_prompt})
+
+        # Retrieve relevant memories and facts (if memory system available)
+        last_user_msg = ""
+        for m in reversed(msgs):
+            if m.get("role") == "user":
+                last_user_msg = m.get("content", "")
+                break
+
+        if last_user_msg and self._vector:
+            memories = self._vector.search(last_user_msg, n_results=3)
+            if memories:
+                lines = ["[Воспоминания]"]
+                for mem in memories:
+                    lines.append(f"- {mem['text'][:150]}")
+                extra.append({"role": "system", "content": "\n".join(lines)})
+
+        if self._sqlite:
+            # Get facts about detected person (from vision)
+            person = self._detect_person(vision_desc) if vision_desc else None
+            if person:
+                facts = self._sqlite.get_facts_about(person)
+                if facts:
+                    lines = [f"[Факты о {person}]"]
+                    for f in facts[:5]:
+                        lines.append(f"- {f['subject']} {f['predicate']} {f['object']}")
+                    extra.append({"role": "system", "content": "\n".join(lines)})
 
         if vision_desc:
             desc = vision_desc
@@ -76,6 +117,15 @@ class ContextBuilder:
             logger.debug("Context ({} msgs): {}", len(msgs), " | ".join(roles))
 
         return msgs
+
+    def _detect_person(self, vision_desc: str | None) -> str | None:
+        """Extract recognized person from vision description."""
+        if not vision_desc or not self._faces:
+            return None
+        for folder, profile in self._faces.items():
+            if folder in vision_desc:
+                return folder
+        return None
 
     @staticmethod
     def _get_time_modifier() -> str:

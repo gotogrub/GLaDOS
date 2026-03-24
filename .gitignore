@@ -166,8 +166,8 @@ cython_debug/
 *.onnx
 *.nemo
 
-# Local knowledge store
-data/knowledge.json
+# Local data (knowledge, memory DB, chroma)
+data/
 
 # Local scratch space
 tmp/
