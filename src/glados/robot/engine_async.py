@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import queue
 import threading
 from typing import Any
@@ -142,8 +143,30 @@ class AsyncRobotEngine:
         # which deadlocks asyncio.to_thread when other tasks are running.
         if self._start_audio:
             audio_io = get_audio_system("sounddevice")
-            logger.info("Loading ASR ({})...", self._config.asr_engine)
-            asr = get_audio_transcriber(engine_type=self._config.asr_engine)
+
+            # Try remote ASR first (GPU server, large-v3, better quality)
+            asr = None
+            asr_url = os.environ.get("ASR_URL", "")
+            if asr_url:
+                from .remote_asr import RemoteASR
+
+                logger.info("Connecting to remote ASR at {}...", asr_url)
+                remote_asr = RemoteASR(
+                    url=asr_url,
+                    model=os.environ.get("ASR_MODEL", "Systran/faster-whisper-large-v3"),
+                    language="ru",
+                )
+                if remote_asr.check_connection():
+                    asr = remote_asr
+                    logger.success("Remote ASR ready.")
+                else:
+                    logger.warning("Remote ASR unavailable, falling back to local.")
+
+            # Fallback to local Whisper
+            if asr is None:
+                logger.info("Loading local ASR ({})...", self._config.asr_engine)
+                asr = get_audio_transcriber(engine_type=self._config.asr_engine)
+
             logger.info("ASR warmup...")
             asr.transcribe_file(resource_path("data/0.wav"))
             logger.info("ASR warmup done. Starting audio listener...")
