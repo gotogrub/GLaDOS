@@ -1,10 +1,14 @@
 """SpeechWorker: Mic → VAD → ASR → LLM queue."""
 from __future__ import annotations
 
+import io
 import queue
 import threading
 import time
+import wave
 from collections import deque
+from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 from loguru import logger
@@ -95,6 +99,7 @@ class SpeechWorker:
             self._reset()
             return
         audio = np.concatenate(self._samples)
+        self._save_debug_audio(audio)
         text = self._asr.transcribe(audio).strip()
 
         if not text:
@@ -118,6 +123,23 @@ class SpeechWorker:
             "_lane": "priority",
         })
         self._reset()
+
+    def _save_debug_audio(self, audio: NDArray[np.float32]) -> None:
+        """Save recorded audio for ASR debugging."""
+        try:
+            debug_dir = Path("logs/asr_debug")
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            path = debug_dir / f"{ts}.wav"
+            audio_int16 = (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+            with wave.open(str(path), "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(16000)
+                wf.writeframes(audio_int16.tobytes())
+            logger.debug("ASR debug audio saved: {}", path)
+        except Exception as e:
+            logger.warning("Failed to save debug audio: {}", e)
 
     def _reset(self) -> None:
         self._recording = False

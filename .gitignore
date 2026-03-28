@@ -172,7 +172,7 @@ data/
 # Local scratch space
 tmp/
 
-# Runtime logs
+# Runtime logs and debug audio
 logs/
 
 # macOS
