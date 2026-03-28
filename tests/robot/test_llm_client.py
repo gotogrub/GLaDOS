@@ -6,9 +6,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def test_stream_tokens(mocker):
-    """OllamaClient should yield tokens from streaming response."""
-    client = OllamaClient(url="http://localhost:11434/api/chat", model="test")
-
+    """OllamaClient should yield content tokens from streaming response."""
     mock_lines = [
         '{"message":{"content":"Hello"},"done":false}',
         '{"message":{"content":" world"},"done":false}',
@@ -19,17 +17,24 @@ async def test_stream_tokens(mocker):
         for line in mock_lines:
             yield line
 
-    # Mock the httpx stream context
     mock_response = mocker.MagicMock()
     mock_response.raise_for_status = mocker.MagicMock()
     mock_response.aiter_lines = mock_aiter_lines
 
-    mock_ctx = mocker.AsyncMock()
-    mock_ctx.__aenter__ = mocker.AsyncMock(return_value=mock_response)
-    mock_ctx.__aexit__ = mocker.AsyncMock(return_value=False)
+    mock_stream_ctx = mocker.AsyncMock()
+    mock_stream_ctx.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+    mock_stream_ctx.__aexit__ = mocker.AsyncMock(return_value=False)
 
-    mocker.patch.object(client._client, "stream", return_value=mock_ctx)
+    mock_client_instance = mocker.MagicMock()
+    mock_client_instance.stream = mocker.MagicMock(return_value=mock_stream_ctx)
 
+    mock_client_ctx = mocker.AsyncMock()
+    mock_client_ctx.__aenter__ = mocker.AsyncMock(return_value=mock_client_instance)
+    mock_client_ctx.__aexit__ = mocker.AsyncMock(return_value=False)
+
+    mocker.patch("glados.robot.llm_client.httpx.AsyncClient", return_value=mock_client_ctx)
+
+    client = OllamaClient(url="http://localhost:11434/api/chat", model="test")
     tokens = []
     async for token in client.stream([{"role": "user", "content": "hi"}]):
         tokens.append(token)
@@ -37,12 +42,11 @@ async def test_stream_tokens(mocker):
     assert tokens == ["Hello", " world"]
 
 
-async def test_stream_handles_empty_lines(mocker):
-    """OllamaClient should skip empty lines."""
-    client = OllamaClient(url="http://localhost:11434/api/chat", model="test")
-
+async def test_stream_skips_empty_lines(mocker):
+    """OllamaClient should skip empty lines and thinking-only chunks."""
     mock_lines = [
         "",
+        '{"message":{"content":"","thinking":"blah"},"done":false}',
         '{"message":{"content":"ok"},"done":false}',
         "",
         '{"done":true}',
@@ -56,12 +60,20 @@ async def test_stream_handles_empty_lines(mocker):
     mock_response.raise_for_status = mocker.MagicMock()
     mock_response.aiter_lines = mock_aiter_lines
 
-    mock_ctx = mocker.AsyncMock()
-    mock_ctx.__aenter__ = mocker.AsyncMock(return_value=mock_response)
-    mock_ctx.__aexit__ = mocker.AsyncMock(return_value=False)
+    mock_stream_ctx = mocker.AsyncMock()
+    mock_stream_ctx.__aenter__ = mocker.AsyncMock(return_value=mock_response)
+    mock_stream_ctx.__aexit__ = mocker.AsyncMock(return_value=False)
 
-    mocker.patch.object(client._client, "stream", return_value=mock_ctx)
+    mock_client_instance = mocker.MagicMock()
+    mock_client_instance.stream = mocker.MagicMock(return_value=mock_stream_ctx)
 
+    mock_client_ctx = mocker.AsyncMock()
+    mock_client_ctx.__aenter__ = mocker.AsyncMock(return_value=mock_client_instance)
+    mock_client_ctx.__aexit__ = mocker.AsyncMock(return_value=False)
+
+    mocker.patch("glados.robot.llm_client.httpx.AsyncClient", return_value=mock_client_ctx)
+
+    client = OllamaClient(url="http://localhost:11434/api/chat", model="test")
     tokens = []
     async for token in client.stream([{"role": "user", "content": "hi"}]):
         tokens.append(token)

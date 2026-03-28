@@ -72,8 +72,8 @@ class EmotionParser:
         "angry", "amused", "contemplative", "cold",
     })
 
-    # [emotion:sarcastic,0.8] or [emotion:sarcastic]
-    _TAG_RE = re.compile(r"\s*\[emotion:([a-z_]+)(?:,([\d.]+))?\]\s*")
+    # [emotion:sarcastic,0.8] or [emotion:sarcastic,high] or [emotion:sarcastic]
+    _TAG_RE = re.compile(r"\s*\[emotion:([a-z_]+)(?:,([^\]]*))?\]\s*")
     # Legacy: [SARCASM]
     _OLD_TAG_RE = re.compile(r"\s*\[([A-Z_]+)\]\s*")
     _OLD_EMOTION_MAP = {
@@ -104,7 +104,7 @@ class EmotionParser:
             name = m.group(1)
             if name in self.EMOTIONS:
                 self.emotion = name
-                self.intensity = float(m.group(2)) if m.group(2) else 0.5
+                self.intensity = self._parse_intensity(m.group(2))
                 self._detected = True
                 logger.info("Emotion: {} ({:.1f})", self.emotion, self.intensity)
                 return combined[m.end():]
@@ -132,6 +132,17 @@ class EmotionParser:
             return combined
 
         return ""  # keep buffering
+
+    @staticmethod
+    def _parse_intensity(raw: str | None) -> float:
+        if not raw:
+            return 0.5
+        raw = raw.strip().lower()
+        try:
+            return float(raw)
+        except ValueError:
+            word_map = {"low": 0.3, "medium": 0.5, "high": 0.8, "max": 1.0}
+            return word_map.get(raw, 0.5)
 
     def flush(self) -> str:
         """Flush buffered text (call at end of stream)."""
