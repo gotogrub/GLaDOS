@@ -1,4 +1,4 @@
-"""VisionWorker: camera → FastVLM + FaceID → VisionState + events."""
+"""VisionWorker: camera → VLM + FaceID → VisionState + events."""
 from __future__ import annotations
 
 import queue
@@ -7,14 +7,13 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import cv2
 import numpy as np
 from loguru import logger
 from numpy.typing import NDArray
 
-from ..vision.fastvlm import FastVLM
 from ..vision.vision_state import VisionState
 from .config import VisionSettings
 from .face_id import FaceRecognizer
@@ -34,7 +33,7 @@ class VisionEvent:
 class VisionWorker:
     """Camera → VLM description + face recognition → VisionState + events."""
 
-    VISION_PROMPT = "Describe the image briefly, focusing on salient elements."
+    VISION_PROMPT = "Опиши кратко что видишь. Фокус на людях и действиях. На русском."
 
     def __init__(
         self,
@@ -43,7 +42,7 @@ class VisionWorker:
         shutdown_event: threading.Event,
         settings: VisionSettings,
         face_recognizer: FaceRecognizer | None = None,
-        vlm: FastVLM | None = None,
+        vlm: Any | None = None,
         face_display: "FaceDisplay | None" = None,
     ) -> None:
         self._state = vision_state
@@ -51,7 +50,7 @@ class VisionWorker:
         self._shutdown = shutdown_event
         self._settings = settings
         self._face = face_recognizer
-        self._vlm = vlm
+        self._vlm = vlm  # FastVLM or RemoteVLM — both have describe-like interface
         self._display = face_display
 
         self._capture: cv2.VideoCapture | None = None
@@ -93,11 +92,21 @@ class VisionWorker:
                 desc = ""
                 if self._vlm:
                     try:
-                        features = self._vlm.encode_image(frame)
-                        desc = self._vlm.describe_from_features(
-                            features, prompt=self.VISION_PROMPT,
-                            max_tokens=self._settings.max_tokens,
-                        ) or ""
+                        if hasattr(self._vlm, "describe"):
+                            # RemoteVLM
+                            desc = self._vlm.describe(
+                                frame,
+                                prompt=self.VISION_PROMPT,
+                                max_tokens=self._settings.max_tokens,
+                            ) or ""
+                        else:
+                            # FastVLM (local)
+                            features = self._vlm.encode_image(frame)
+                            desc = self._vlm.describe_from_features(
+                                features,
+                                prompt=self.VISION_PROMPT,
+                                max_tokens=self._settings.max_tokens,
+                            ) or ""
                     except Exception as e:
                         logger.error("VLM failed: {}", e)
 

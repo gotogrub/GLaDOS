@@ -12,11 +12,13 @@ class VisionSettings(BaseModel):
     camera_index: int = 0
     capture_interval_seconds: float = 3.0
     scene_change_threshold: float = 0.05
-    max_tokens: int = 64
+    max_tokens: int = 100
     resolution: int = 384
     save_frames: bool = False
     save_frames_dir: str = "vision_frames"
     save_frames_max: int = 1000
+    # Remote VLM (replaces local FastVLM when set)
+    remote_vlm_model: str | None = None  # e.g. "qwen2.5vl:7b"
 
 
 class FaceDisplaySettings(BaseModel):
@@ -101,6 +103,11 @@ class RobotConfig(BaseModel):
                 env_overrides[key] = val
 
         # Apply overrides to yaml config
+        # Apply VISION_MODEL to vision.remote_vlm_model
+        vision_model = env_overrides.get("VISION_MODEL", "")
+        if vision_model:
+            robot.setdefault("vision", {})["remote_vlm_model"] = vision_model
+
         _ENV_TO_YAML = {
             "OLLAMA_URL": "completion_url",
             "OLLAMA_API_KEY": "api_key",

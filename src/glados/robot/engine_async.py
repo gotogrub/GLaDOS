@@ -70,13 +70,16 @@ class AsyncRobotEngine:
         logger.info("AsyncRobotEngine starting...")
         self._loop = asyncio.get_running_loop()
 
-        # LLM client
+        # LLM client — check server connectivity
+        llm_url = str(self._config.completion_url)
+        logger.info("Connecting to LLM server: {}", llm_url)
         llm = OllamaClient(
-            url=str(self._config.completion_url),
+            url=llm_url,
             model=self._config.llm_model,
             api_key=self._config.api_key,
             options=self._config.llm_options,
         )
+        await self._check_llm_server(llm_url, self._config.llm_model)
 
         # Knowledge
         knowledge: KnowledgeStore | None = None
@@ -213,11 +216,36 @@ class AsyncRobotEngine:
 
         # Vision
         if self._start_vision and self._vision_state:
-            from ..vision.fastvlm import FastVLM
+            vlm = None
+            # Try remote VLM first (GPU server, Russian, better quality)
+            if self._config.vision.remote_vlm_model:
+                from .remote_vlm import RemoteVLM
 
-            logger.info("Loading FastVLM...")
-            vlm = FastVLM(resource_path("models/Vision"))
-            logger.info("FastVLM loaded.")
+                remote_url = str(self._config.completion_url)
+                logger.info(
+                    "Connecting to remote VLM ({}) at {}...",
+                    self._config.vision.remote_vlm_model, remote_url,
+                )
+                vlm = RemoteVLM(
+                    url=remote_url,
+                    model=self._config.vision.remote_vlm_model,
+                )
+                if vlm.check_connection():
+                    logger.success("Remote VLM ready.")
+                else:
+                    logger.warning("Remote VLM unavailable, falling back to local FastVLM.")
+                    vlm = None
+
+            # Fallback to local FastVLM
+            if vlm is None:
+                try:
+                    from ..vision.fastvlm import FastVLM
+
+                    logger.info("Loading local FastVLM...")
+                    vlm = FastVLM(resource_path("models/Vision"))
+                    logger.info("FastVLM loaded.")
+                except Exception as e:
+                    logger.warning("FastVLM not available: {}", e)
             face_rec = None
             try:
                 from .face_id import FaceRecognizer
@@ -276,6 +304,37 @@ class AsyncRobotEngine:
         logger.success(
             "AsyncRobotEngine ready ({} threads + async brain).",
             len(self._threads),
+        )
+
+    async def _check_llm_server(self, url: str, model: str) -> None:
+        """Check LLM server connectivity with retries."""
+        import httpx as _httpx
+
+        base = url.rsplit("/api/", 1)[0]
+        for attempt in range(1, 4):
+            try:
+                async with _httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(f"{base}/api/tags")
+                    resp.raise_for_status()
+                    models = [m["name"] for m in resp.json().get("models", [])]
+                    if model in models:
+                        logger.success("LLM server OK: {} available", model)
+                    else:
+                        logger.warning(
+                            "LLM model '{}' not found on server. Available: {}",
+                            model, models,
+                        )
+                    return
+            except Exception as e:
+                logger.warning(
+                    "LLM server unreachable (attempt {}/3): {}", attempt, e
+                )
+                if attempt < 3:
+                    await asyncio.sleep(2.0)
+        logger.error(
+            "LLM server at {} not reachable after 3 attempts. "
+            "GLaDOS will start but responses will fail.",
+            base,
         )
 
     async def stop(self) -> None:
